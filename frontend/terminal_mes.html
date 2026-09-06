@@ -1,0 +1,96 @@
+<!-- meu_sistema_pcp/frontend/terminal_mes.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Terminal Chão de Fábrica - MES</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 30px; background-color: #222; color: #fff; } /* Fundo escuro industrial */
+        h1, h2 { color: #007acc; }
+        .container { background: #333; padding: 25px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); max-width: 500px; margin: 0 auto; }
+        .form-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; }
+        label { font-weight: bold; font-size: 14px; }
+        input { padding: 12px; font-size: 16px; border: 1px solid #555; border-radius: 4px; background-color: #444; color: #fff; }
+        button { background-color: #007acc; color: white; border: none; padding: 15px; font-size: 16px; font-weight: bold; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 10px; }
+        button:hover { background-color: #005999; }
+        #mensagemRetorno { margin-top: 20px; padding: 12px; border-radius: 4px; font-weight: bold; text-align: center; display: none; }
+        .sucesso { background-color: #4caf50; color: white; }
+        .erro { background-color: #f44336; color: white; }
+    </style>
+</head>
+<body>
+
+    <!-- Trocado de <form> para <div> para eliminar o recarregamento por completo -->
+    <div class="container">
+        <h1>🛠️ Terminal MES - Chão de Fábrica</h1>
+        <h2>Apontamento de Produção (SAP CO11N)</h2>
+        
+        <div class="form-group">
+            <label>Código da Ordem de Produção (OP):</label>
+            <input type="text" id="codigoOp" placeholder="Ex: OP-PL-0513-1">
+        </div>
+
+        <div class="form-group">
+            <label>Quantidade Produzida Boa (Pcs/Un):</label>
+            <input type="number" id="qtdBoa" value="0" min="0">
+        </div>
+
+        <div class="form-group">
+            <label>Quantidade de Refugo / Perda (Scrap):</label>
+            <input type="number" id="qtdRefugo" value="0" min="0">
+        </div>
+
+        <!-- Botão limpo disparando a função simples sem interferência -->
+        <button onclick="enviarApontamento()">🏭 Finalizar e Apontar Produção</button>
+
+        <div id="mensagemRetorno"></div>
+    </div>
+
+    <script>
+        const API_URL = "http://localhost:8000/api/v1";
+
+        async function enviarApontamento() {
+            const divMensagem = document.getElementById("mensagemRetorno");
+            divMensagem.style.display = "none";
+
+            const payload = {
+                codigo_op: document.getElementById("codigoOp").value.trim(),
+                quantidade_boa: parseFloat(document.getElementById("qtdBoa").value) || 0,
+                quantidade_refugo: parseFloat(document.getElementById("qtdRefugo").value) || 0
+            };
+
+            if (!payload.codigo_op) {
+                exibirMensagem("Por favor, digite o código da OP.", false);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/ordens/apontar`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    exibirMensagem(result.mensagem, true);
+                    // Não limparemos os inputs imediatamente para você conseguir ler o código digitado junto com o sucesso
+                } else {
+                    exibirMensagem(result.detail || "Erro ao apontar produção.", false);
+                }
+            } catch (error) {
+                exibirMensagem("Não foi possível conectar ao servidor do PCP.", false);
+                console.error(error);
+            }
+        }
+
+        function exibirMensagem(texto, isSucesso) {
+            const divMensagem = document.getElementById("mensagemRetorno");
+            divMensagem.innerText = texto;
+            divMensagem.className = isSucesso ? "sucesso" : "erro";
+            divMensagem.style.display = "block";
+        }
+    </script>
+</body>
+</html>

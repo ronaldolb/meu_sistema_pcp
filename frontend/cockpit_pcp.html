@@ -1,0 +1,304 @@
+<!-- meu_sistema_pcp/frontend/cockpit_pcp.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Cockpit PCP - Monitor de Estoque, MRP e Capacidade</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 30px; background-color: #f4f6f9; color: #333; }
+        h1, h2 { color: #004481; }
+        .container { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #004481; color: white; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        button { background-color: #004481; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #002d54; }
+
+        .mrp-form { display: flex; flex-wrap: wrap; align-items: center; gap: 15px; margin-top: 15px; }
+        .form-group { display: flex; align-items: center; gap: 5px; }
+        input { padding: 8px; font-size: 14px; width: 120px; border: 1px solid #ccc; border-radius: 4px; }
+        #mrpMaterial { width: 150px; }
+
+        .alert { color: #d9534f; font-weight: bold; }
+
+        .grid-capacidade { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 15px; }
+        .card-maquina { background: #fafafa; border: 1px solid #e0e0e0; padding: 15px; border-radius: 6px; color: #333; }
+        .barra-progresso-container { background-color: #e0e0e0; border-radius: 10px; width: 100%; height: 20px; margin-top: 8px; overflow: hidden; }
+        .barra-progresso { height: 100%; text-align: center; color: white; font-size: 12px; line-height: 20px; font-weight: bold; transition: width 0.5s ease; }
+        .status-normal { background-color: #5cb85c; }
+        .status-alerta { background-color: #f0ad4e; }
+        .status-sobrecarga { background-color: #d9534f; }
+    </style>
+</head>
+<body>
+
+    <h1>Gestão Industrial - Cockpit do PCP</h1>
+
+    <!-- Seção de Estoque Real -->
+    <div class="container">
+        <h2>📊 Monitor de Estoque em Tempo Real (SAP MARD)</h2>
+        <button onclick="carregarDadosDoSistema()">🔄 Atualizar Painel Geral</button>
+        <table id="tabelaEstoque">
+            <thead>
+                <tr>
+                    <th>Código do Material</th>
+                    <th>Descrição</th>
+                    <th>Tipo</th>
+                    <th>Estoque Físico Atual</th>
+                    <th>Estoque de Segurança</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Painel Gráfico de Carga de Máquinas (CRP) -->
+    <div class="container">
+        <h2>📈 Carga e Ocupação das Máquinas (SAP PP-CRP)</h2>
+        <div class="grid-capacidade" id="painelCapacidade"></div>
+    </div>
+
+    <!-- Fila de Ordens de Produção -->
+    <div class="container">
+        <h2>📋 Fila de Ordens de Produção (SAP MD04)</h2>
+        <table id="tabelaOrdens">
+            <thead>
+                <tr>
+                    <th>Código da OP</th>
+                    <th>Material</th>
+                    <th>Qtd. Planejada</th>
+                    <th>Qtd. Confirmada</th>
+                    <th>Status</th>
+                    <th>Ação</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div id="resultadoApontamento" style="margin-top: 12px; font-weight: bold;"></div>
+    </div>
+
+    <!-- Seção de Cálculo do MRP -->
+    <div class="container">
+        <h2>⚙️ Executar Rodada de MRP (Transação MD01)</h2>
+        <div class="mrp-form">
+            <div class="form-group">
+                <label>Material:</label>
+                <input type="text" id="mrpMaterial" value="MAT-FERT-BIKE">
+            </div>
+            <div class="form-group">
+                <label>Quantidade:</label>
+                <input type="number" id="mrpQtd" placeholder="Ex: 80" min="1">
+            </div>
+            <div class="form-group">
+                <label>Dias p/ Entrega:</label>
+                <input type="number" id="mrpDias" value="10">
+            </div>
+            <button onclick="executarMRP()">🚀 Rodar Processamento do MRP</button>
+        </div>
+
+        <div id="resultadoMRP" style="margin-top: 15px; font-weight: bold; color: #5cb85c;"></div>
+    </div>
+
+    <script>
+        const API_URL = "http://localhost:8000/api/v1";
+
+        function carregarDadosDoSistema() {
+            carregarEstoque();
+            carregarCapacidade();
+            carregarOrdens();
+        }
+
+        async function carregarEstoque() {
+            try {
+                const response = await fetch(`${API_URL}/estoque`);
+                const dados = await response.json();
+                const tbody = document.querySelector("#tabelaEstoque tbody");
+                tbody.innerHTML = "";
+
+                dados.forEach(item => {
+                    const tr = document.createElement("tr");
+                    const isBelowSafety = item.estoque_atual < item.estoque_seguranca;
+
+                    tr.innerHTML = `
+                        <td><strong>${item.codigo}</strong></td>
+                        <td>${item.descricao}</td>
+                        <td>${item.tipo}</td>
+                        <td class="${isBelowSafety ? 'alert' : ''}">${item.estoque_atual.toFixed(1)}</td>
+                        <td>${item.estoque_seguranca.toFixed(1)}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                console.error("Erro ao conectar na API de estoque:", error);
+            }
+        }
+
+        async function carregarCapacidade() {
+            try {
+                const response = await fetch(`${API_URL}/capacidade`);
+                const dados = await response.json();
+                const container = document.getElementById("painelCapacidade");
+                container.innerHTML = "";
+
+                if (!dados || Object.keys(dados).length === 0) {
+                    container.innerHTML = "<p style='color: #666; font-style: italic; padding: 10px;'>Nenhuma ordem de produção ativa gerando carga nas máquinas.</p>";
+                    return;
+                }
+
+                for (const [codigoCentro, info] of Object.entries(dados)) {
+                    const card = document.createElement("div");
+                    card.className = "card-maquina";
+
+                    let classeCor = "status-normal";
+                    if (info.percentual_ocupacao >= 100) {
+                        classeCor = "status-sobrecarga";
+                    } else if (info.percentual_ocupacao >= 80) {
+                        classeCor = "status-alerta";
+                    }
+
+                    const larguraBarra = Math.min(info.percentual_ocupacao, 100);
+                    const descricaoTexto = info.description || info.descricao || "Posto Operacional";
+
+                    card.innerHTML = `
+                        <strong>🏭 ${codigoCentro}</strong> - ${descricaoTexto}<br>
+                        <small>Carga Solicitada: ${info.horas_requeridas.toFixed(2)}h / Turno Base: ${info.capacidade_diaria.toFixed(1)}h</small>
+                        <div class="barra-progresso-container">
+                            <div class="barra-progresso ${classeCor}" style="width: ${larguraBarra}%">
+                                ${info.percentual_ocupacao}%
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                }
+            } catch (error) {
+                console.error("Erro ao conectar na API de capacidade:", error);
+            }
+        }
+
+        async function carregarOrdens() {
+            try {
+                const response = await fetch(`${API_URL}/ordens`);
+                const dados = await response.json();
+                const tbody = document.querySelector("#tabelaOrdens tbody");
+                tbody.innerHTML = "";
+
+                if (!dados || dados.length === 0) {
+                    tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; color:#666;'>Nenhuma ordem cadastrada.</td></tr>";
+                    return;
+                }
+
+                const corStatus = { "CRTD": "#f0ad4e", "REL": "#5bc0de", "CNF": "#5cb85c" };
+
+                dados.forEach(op => {
+                    const tr = document.createElement("tr");
+                    const cor = corStatus[op.status] || "#333";
+
+                    // Só permite apontar ordens que ainda não foram confirmadas
+                    const acaoHtml = (op.status === "CNF")
+                        ? `<span style="color:#5cb85c;">✔ Concluída</span>`
+                        : `<button style="padding:6px 12px; font-size:13px;" onclick="abrirApontamento('${op.op_code}', ${op.qty_planned})">🏭 Apontar</button>`;
+
+                    tr.innerHTML = `
+                        <td><strong>${op.op_code}</strong></td>
+                        <td>${op.material}</td>
+                        <td>${op.qty_planned.toFixed(1)}</td>
+                        <td>${op.qty_confirmed.toFixed(1)}</td>
+                        <td><span style="color:${cor}; font-weight:bold;">${op.status}</span></td>
+                        <td>${acaoHtml}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                console.error("Erro ao conectar na API de ordens:", error);
+            }
+        }
+
+        async function abrirApontamento(opCode, qtyPlanejada) {
+            const divResultado = document.getElementById("resultadoApontamento");
+
+            const qtdBoaTexto = prompt(`Ordem ${opCode}\nQuantidade planejada: ${qtyPlanejada}\n\nQuantidade produzida BOA:`, qtyPlanejada);
+            if (qtdBoaTexto === null) return; // Cancelou
+
+            const qtdRefugoTexto = prompt(`Ordem ${opCode}\nQuantidade de REFUGO / perda:`, "0");
+            if (qtdRefugoTexto === null) return; // Cancelou
+
+            const qtdBoa = parseFloat(qtdBoaTexto);
+            const qtdRefugo = parseFloat(qtdRefugoTexto);
+
+            if (isNaN(qtdBoa) || isNaN(qtdRefugo) || qtdBoa < 0 || qtdRefugo < 0) {
+                divResultado.style.color = "#d9534f";
+                divResultado.innerText = "Valores inválidos. Apontamento cancelado.";
+                return;
+            }
+
+            divResultado.style.color = "#004481";
+            divResultado.innerText = `Apontando ${opCode}...`;
+
+            try {
+                const response = await fetch(`${API_URL}/ordens/apontar`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        codigo_op: opCode,
+                        quantidade_boa: qtdBoa,
+                        quantidade_refugo: qtdRefugo
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    divResultado.style.color = "#5cb85c";
+                    divResultado.innerText = result.mensagem;
+                    carregarDadosDoSistema(); // Atualiza estoque, capacidade e a própria fila
+                } else {
+                    divResultado.style.color = "#d9534f";
+                    divResultado.innerText = `Erro: ${result.detail || 'Falha no apontamento'}`;
+                }
+            } catch (error) {
+                divResultado.style.color = "#d9534f";
+                divResultado.innerText = "Não foi possível conectar ao servidor do PCP.";
+                console.error(error);
+            }
+        }
+
+        async function executarMRP() {
+            const divResultado = document.getElementById("resultadoMRP");
+            divResultado.style.color = "#004481";
+            divResultado.innerText = "Processando MRP...";
+
+            try {
+                const payload = {
+                    codigo_material: document.getElementById("mrpMaterial").value.trim(),
+                    quantidade: parseFloat(document.getElementById("mrpQtd").value) || 0,
+                    dias_para_entrega: parseInt(document.getElementById("mrpDias").value) || 10
+                };
+
+                const response = await fetch(`${API_URL}/mrp/calcular`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    divResultado.style.color = "#5cb85c";
+                    divResultado.innerText = result.mensagem;
+                    setTimeout(() => { carregarDadosDoSistema(); }, 300);
+                } else {
+                    divResultado.style.color = "#d9534f";
+                    divResultado.innerText = `Erro: ${result.detail || 'Falha no processamento'}`;
+                }
+            } catch (error) {
+                divResultado.style.color = "#d9534f";
+                divResultado.innerText = "Não foi possível conectar ao servidor do PCP.";
+                console.error(error);
+            }
+        }
+
+        carregarDadosDoSistema();
+    </script>
+</body>
+</html>

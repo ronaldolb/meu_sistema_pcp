@@ -1,0 +1,14 @@
+# Ambientes virtuais
+.venv/
+venv/
+ENV/
+env/
+
+# Banco de dados local (gerado dinamicamente)
+pcp.db
+pcp.db-journal
+
+# Arquivos do sistema operacional e cache do Python
+__pycache__/
+*.pyc
+.DS_Store
