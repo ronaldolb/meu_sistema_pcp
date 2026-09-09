@@ -1,95 +1,245 @@
-<!-- meu_sistema_pcp/frontend/terminal_mes.html -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Terminal Chão de Fábrica - MES</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 30px; background-color: #222; color: #fff; } /* Fundo escuro industrial */
-        h1, h2 { color: #007acc; }
-        .container { background: #333; padding: 25px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); max-width: 500px; margin: 0 auto; }
-        .form-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; }
-        label { font-weight: bold; font-size: 14px; }
-        input { padding: 12px; font-size: 16px; border: 1px solid #555; border-radius: 4px; background-color: #444; color: #fff; }
-        button { background-color: #007acc; color: white; border: none; padding: 15px; font-size: 16px; font-weight: bold; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 10px; }
-        button:hover { background-color: #005999; }
-        #mensagemRetorno { margin-top: 20px; padding: 12px; border-radius: 4px; font-weight: bold; text-align: center; display: none; }
-        .sucesso { background-color: #4caf50; color: white; }
-        .erro { background-color: #f44336; color: white; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal MES - Apontamento de Produção</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen">
 
-    <!-- Trocado de <form> para <div> para eliminar o recarregamento por completo -->
-    <div class="container">
-        <h1>🛠️ Terminal MES - Chão de Fábrica</h1>
-        <h2>Apontamento de Produção (SAP CO11N)</h2>
-        
-        <div class="form-group">
-            <label>Código da Ordem de Produção (OP):</label>
-            <input type="text" id="codigoOp" placeholder="Ex: OP-PL-0513-1">
+    <header class="bg-slate-800 border-b border-gray-700 p-4 shadow-lg">
+        <div class="container mx-auto grid grid-cols-3 items-center gap-3">
+            <h1 class="text-xl font-bold flex items-center gap-2 text-amber-400">
+                ⚡ Terminal MES
+            </h1>
+            <nav class="justify-self-center flex gap-2 text-sm">
+                <a href="cockpit_pcp.html" class="bg-slate-700 hover:bg-slate-600 text-gray-200 font-semibold py-2 px-4 rounded shadow transition">📊 Cockpit</a>
+                <a href="terminal_mes.html" class="bg-amber-500 text-slate-950 font-semibold py-2 px-4 rounded shadow">⚡ Terminal MES</a>
+                <a href="rastreabilidade.html" class="bg-slate-700 hover:bg-slate-600 text-gray-200 font-semibold py-2 px-4 rounded shadow transition">🧬 Rastreabilidade</a>
+            </nav>
+            <span id="relogio" class="justify-self-end text-sm font-mono text-gray-400"></span>
         </div>
+    </header>
 
-        <div class="form-group">
-            <label>Quantidade Produzida Boa (Pcs/Un):</label>
-            <input type="number" id="qtdBoa" value="0" min="0">
+    <main class="container mx-auto p-6 space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            <!-- Formulário de Apontamento -->
+            <section class="bg-slate-800 p-6 rounded-xl border border-gray-700 shadow-xl">
+                <h2 class="text-lg font-bold text-gray-200 mb-4 border-b border-gray-700 pb-2">Registrar Apontamento (OP)</h2>
+
+                <form id="form-apontamento" onsubmit="registrarApontamento(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Ordem de Produção (liberadas - REL)</label>
+                        <select id="select-op" required onchange="carregarComponentesDaOP()" class="w-full bg-slate-900 border border-gray-600 rounded p-3 text-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                            <option value="">Carregando OPs liberadas...</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Quantidade Produzida (Boa)</label>
+                        <input type="number" step="0.01" id="qty_boa" required placeholder="Ex: 5" class="w-full bg-slate-900 border border-gray-600 rounded p-3 text-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Quantidade de Refugo</label>
+                        <input type="number" step="0.01" id="qty_refugo" value="0" class="w-full bg-slate-900 border border-gray-600 rounded p-3 text-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    </div>
+
+                    <div id="lotes-componentes" class="space-y-3 border-t border-gray-700 pt-4">
+                        <p class="text-sm text-gray-400">Selecione uma OP para ver os lotes de componentes exigidos.</p>
+                    </div>
+
+                    <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3 rounded-lg transition duration-200">
+                        Confirmar Produção
+                    </button>
+                </form>
+            </section>
+
+            <!-- Status das OPs -->
+            <section class="bg-slate-800 p-6 rounded-xl border border-gray-700 shadow-xl">
+                <h2 class="text-lg font-bold text-gray-200 mb-4 border-b border-gray-700 pb-2">Ordens em Execução</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-900 text-gray-400">
+                            <tr>
+                                <th class="p-3">OP</th>
+                                <th class="p-3">Material</th>
+                                <th class="p-3">Meta</th>
+                                <th class="p-3">Realizado</th>
+                                <th class="p-3">Progresso</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabela-mes" class="divide-y divide-gray-700"></tbody>
+                    </table>
+                </div>
+            </section>
         </div>
-
-        <div class="form-group">
-            <label>Quantidade de Refugo / Perda (Scrap):</label>
-            <input type="number" id="qtdRefugo" value="0" min="0">
-        </div>
-
-        <!-- Botão limpo disparando a função simples sem interferência -->
-        <button onclick="enviarApontamento()">🏭 Finalizar e Apontar Produção</button>
-
-        <div id="mensagemRetorno"></div>
-    </div>
+    </main>
 
     <script>
-        const API_URL = "http://localhost:8000/api/v1";
+        const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
+        let ordensCache = [];
+        let materiaisCache = [];
+        let estoqueCache = [];
 
-        async function enviarApontamento() {
-            const divMensagem = document.getElementById("mensagemRetorno");
-            divMensagem.style.display = "none";
+        document.addEventListener('DOMContentLoaded', () => {
+            iniciarRelogio();
+            carregarBase();
+        });
 
-            const payload = {
-                codigo_op: document.getElementById("codigoOp").value.trim(),
-                quantidade_boa: parseFloat(document.getElementById("qtdBoa").value) || 0,
-                quantidade_refugo: parseFloat(document.getElementById("qtdRefugo").value) || 0
-            };
+        function iniciarRelogio() {
+            setInterval(() => {
+                document.getElementById('relogio').innerText = new Date().toLocaleTimeString();
+            }, 1000);
+        }
 
-            if (!payload.codigo_op) {
-                exibirMensagem("Por favor, digite o código da OP.", false);
+        async function carregarBase() {
+            const [resMat, resEst] = await Promise.all([
+                fetch(`${API_BASE_URL}/materiais`),
+                fetch(`${API_BASE_URL}/estoque`)
+            ]);
+            materiaisCache = await resMat.json();
+            estoqueCache = await resEst.json();
+            await carregarOpsMes();
+        }
+
+        function materialPorId(id) {
+            return materiaisCache.find(m => m.id === id);
+        }
+
+        async function carregarOpsMes() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/ordens`);
+                ordensCache = await response.json();
+
+                const select = document.getElementById('select-op');
+                const tbody = document.getElementById('tabela-mes');
+
+                select.innerHTML = '<option value="">Selecione uma OP...</option>';
+                tbody.innerHTML = '';
+
+                const opsLiberadas = ordensCache.filter(op => op.status === 'REL');
+
+                opsLiberadas.forEach(op => {
+                    const option = document.createElement('option');
+                    option.value = op.id;
+                    option.textContent = `${op.op_code} - ${op.material_code} (Plan: ${op.qty_planned})`;
+                    select.appendChild(option);
+                });
+
+                ordensCache.forEach(op => {
+                    const pct = op.qty_planned > 0 ? Math.min(Math.round((op.qty_confirmed / op.qty_planned) * 100), 100) : 0;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="p-3 font-mono font-bold text-amber-400">${op.op_code}</td>
+                        <td class="p-3">${op.material_code}</td>
+                        <td class="p-3">${op.qty_planned}</td>
+                        <td class="p-3 font-bold text-green-400">${op.qty_confirmed}</td>
+                        <td class="p-3">
+                            <div class="w-full bg-slate-700 rounded-full h-2.5">
+                                <div class="bg-amber-400 h-2.5 rounded-full" style="width: ${pct}%"></div>
+                            </div>
+                            <span class="text-xs text-gray-400">${pct}%</span>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                console.error('Erro ao carregar OPs no MES:', error);
+            }
+        }
+
+        async function carregarComponentesDaOP() {
+            const opId = parseInt(document.getElementById('select-op').value);
+            const container = document.getElementById('lotes-componentes');
+            container.innerHTML = '';
+
+            if (!opId) {
+                container.innerHTML = '<p class="text-sm text-gray-400">Selecione uma OP para ver os lotes de componentes exigidos.</p>';
+                return;
+            }
+
+            const op = ordensCache.find(o => o.id === opId);
+            const res = await fetch(`${API_BASE_URL}/materiais/${op.material_id}/bom`);
+            const componentes = await res.json();
+
+            if (componentes.length === 0) {
+                container.innerHTML = '<p class="text-sm text-gray-400">Este material não possui componentes (BOM) cadastrados.</p>';
+                return;
+            }
+
+            componentes.forEach(comp => {
+                const lotesDisponiveis = estoqueCache.filter(l => l.material_id === comp.material_id && l.current_stock > 0);
+
+                const div = document.createElement('div');
+                div.innerHTML = `
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Lote de ${comp.material_code} - ${comp.description}</label>
+                    <select data-material-code="${comp.material_code}" class="select-lote w-full bg-slate-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                        <option value="">Selecione o lote...</option>
+                        ${lotesDisponiveis.map(l => `<option value="${l.batch_number}">${l.batch_number} (Saldo: ${l.current_stock})</option>`).join('')}
+                    </select>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function registrarApontamento(event) {
+            event.preventDefault();
+
+            const opId = parseInt(document.getElementById('select-op').value);
+            if (!opId) {
+                alert('Selecione uma Ordem de Produção.');
+                return;
+            }
+            const op = ordensCache.find(o => o.id === opId);
+
+            const qtyBoa = parseFloat(document.getElementById('qty_boa').value);
+            const qtyRefugo = parseFloat(document.getElementById('qty_refugo').value) || 0;
+
+            if (isNaN(qtyBoa) || qtyBoa <= 0) {
+                alert('Informe uma quantidade produzida válida e maior que zero.');
+                return;
+            }
+
+            const componentsBatches = {};
+            let faltouLote = false;
+            document.querySelectorAll('.select-lote').forEach(sel => {
+                if (!sel.value) {
+                    faltouLote = true;
+                }
+                componentsBatches[sel.dataset.materialCode] = sel.value;
+            });
+
+            if (faltouLote) {
+                alert('Selecione o lote de todos os componentes antes de confirmar.');
                 return;
             }
 
             try {
-                const response = await fetch(`${API_URL}/ordens/apontar`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
+                const response = await fetch(`${API_BASE_URL}/ordens/apontar`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        op_code: op.op_code,
+                        qty_produced_good: qtyBoa,
+                        qty_scrap: qtyRefugo,
+                        components_batches: componentsBatches
+                    })
                 });
 
-                const result = await response.json();
-
                 if (response.ok) {
-                    exibirMensagem(result.mensagem, true);
-                    // Não limparemos os inputs imediatamente para você conseguir ler o código digitado junto com o sucesso
+                    document.getElementById('form-apontamento').reset();
+                    document.getElementById('lotes-componentes').innerHTML = '<p class="text-sm text-gray-400">Selecione uma OP para ver os lotes de componentes exigidos.</p>';
+                    await carregarBase();
                 } else {
-                    exibirMensagem(result.detail || "Erro ao apontar produção.", false);
+                    const err = await response.json();
+                    alert(`Erro ao registrar apontamento: ${err.detail || 'Erro desconhecido'}`);
                 }
             } catch (error) {
-                exibirMensagem("Não foi possível conectar ao servidor do PCP.", false);
-                console.error(error);
+                console.error('Erro ao apontar produção:', error);
             }
-        }
-
-        function exibirMensagem(texto, isSucesso) {
-            const divMensagem = document.getElementById("mensagemRetorno");
-            divMensagem.innerText = texto;
-            divMensagem.className = isSucesso ? "sucesso" : "erro";
-            divMensagem.style.display = "block";
         }
     </script>
 </body>

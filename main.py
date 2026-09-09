@@ -1,30 +1,45 @@
-# meu_sistema_pcp/main.py
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware # ADICIONE ESTA LINHA
-from database.connection import init_db
-from api.v1.endpoints import router as api_router
+import sys
+import os
 
+# Adiciona o diretório raiz ao sys.path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from database.connection import init_db
+from api.v1.endpoints import router as api_v1_router
+
+# Inicialização da aplicação FastAPI
 app = FastAPI(
-    title="Sistema PCP Standalone - Padrão SAP",
-    description="API Engine para Planejamento e Controle de Production Industrial",
+    title="Sistema PCP API",
+    description="API de Planejamento e Controle de Produção",
     version="1.0.0"
 )
 
-# --- ADICIONE ESTE BLOCO DE SEGURANÇA CORS ---
+# Configuração de CORS para permitir requisições de navegadores/frontends
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Permite que qualquer página HTML local consulte a API
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# ---------------------------------------------
 
-init_db()
+# Evento de inicialização para criar as tabelas no banco de dados SQLite caso não existam
+@app.on_event("startup")
+def startup_event():
+    init_db()
 
-app.include_router(api_router, prefix="/api/v1")
+# Rota raiz de verificação de status do servidor
+@app.get("/", tags=["Geral"])
+def read_root():
+    return {"message": "API do Sistema PCP online e operacional!"}
 
-if __name__ == "__main__":
-    import uvicorn
-    print("\n[SERVIDOR] Iniciando servidor web do PCP...")
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+# Vinculação dos roteadores da API v1 (CRUD de KPIs, Estoque, Ordens de Produção e Lotes)
+app.include_router(api_v1_router, prefix="/api/v1")
+
+# Servir arquivos estáticos do front-end (HTML, JS, CSS) se a pasta 'frontend' existir
+if os.path.exists("frontend"):
+    app.mount("/frontend", StaticFiles(directory="frontend", html=True), name="frontend")

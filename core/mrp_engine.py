@@ -1,80 +1,71 @@
 # meu_sistema_pcp/core/mrp_engine.py
-import math
-from datetime import datetime, timedelta
-from database.models import Material, BOM, Inventory, ProductionOrder
+from sqlalchemy.orm import Session
+from database.models import Material, BOM, Inventory
 
-def run_mrp_for_material(db, material_code, gross_demand, date_needed):
-    """
-    Motor do MRP Relacional (Padrão SAP)
-    Lê dados reais de engenharia e estoque do pcp.db para planejar a produção.
-    """
-    print(f"\n--- Executando MRP para: {material_code} ---")
-    
-    # 1. Puxar dados mestres do banco de dados
-    material = db.query(Material).filter(Material.material_code == material_code).first()
-    if not material:
-        print(f"Erro: Material '{material_code}' não encontrado no Mestre de Materiais.")
-        return []
-    
-    # 2. Calcular Estoque Disponível Projetado (Fórmula SAP)
-    stock_on_hand = 0.0
-    if material.inventory:
-        stock_on_hand = material.inventory.current_stock
-        
-    firm_receipts = db.query(ProductionOrder).filter(
-        ProductionOrder.material_id == material.id,
-        ProductionOrder.status == "REL"
-    ).all()
-    total_firm_receipts = sum(op.qty_planned for op in firm_receipts)
-    
-    available_stock = stock_on_hand + total_firm_receipts
-    print(f"-> Estoque Físico: {stock_on_hand} | OPs em Processo (+): {total_firm_receipts}")
-    print(f"-> Estoque Disponível Projetado: {available_stock} (Demandado Bruto: {gross_demand})")
-    
-    # 3. Calcular a Necessidade Líquida considerando o Estoque de Segurança
-    net_requirement = gross_demand + material.safety_stock - available_stock
-    
-    if net_requirement <= 0:
-        print(f"-> [OK] Estoque suficiente para manter a segurança de {material.safety_stock} unidades.")
-        return []
-    
-    print(f"-> [ALERTA] Necessidade Líquida: {net_requirement} unidades (Estoque Segurança: {material.safety_stock}).")
-    
-    # 4. Programação Regressiva de Datas (Backward Scheduling)
-    start_date = date_needed - timedelta(days=material.lead_time_days)
-    
-    # 5. Criar e registrar a Ordem Planejada no Banco de Dados (Status 'CRTD')
-    # Adicionamos um carimbo de milissegundos para garantir que o código seja sempre 100% único
-    timestamp = datetime.now().strftime('%M%S%f')[:-3]
-    op_code_temp = f"OP-PL-{timestamp}-{material.id}"
-    
-    new_op = ProductionOrder(
-        op_code=op_code_temp,
-        material_id=material.id,
-        qty_planned=float(net_requirement),
-        status="CRTD",
-        start_date=start_date.strftime("%Y-%m-%d"),
-        end_date=date_needed.strftime("%Y-%m-%d")
-    )
-    db.add(new_op)
-    db.commit()
-    db.refresh(new_op) # Garante que o objeto está sincronizado com o banco
-    print(f"-> [OP GERADA NO BANCO] {new_op.op_code} | Qtd: {new_op.qty_planned}")
-    
-    generated_orders = [new_op]
-    
-    # 6. EXPLOSÃO EM CASCATA DA BOM (Próximo nível da árvore de produtos)
+
+def _estoque_total(db: Session, material_id: int) -> float:
+    """Soma o estoque de todos os lotes de um material."""
+    lotes = db.query(Inventory).filter(Inventory.material_id == material_id).all()
+    return sum(l.current_stock for l in lotes)
+
+
+def _explodir_componentes(db: Session, material: Material, necessidade_liquida: float, nivel: int, resultado: list, visitados: set):
+    """Explode recursivamente os componentes de um material via BOM, com trava antiloop."""
+    if material.id in visitados:
+        return  # Trava antiloop (evita BOM circular)
+    visitados.add(material.id)
+
     bom_items = db.query(BOM).filter(BOM.parent_material_id == material.id).all()
-    
-    if bom_items:
-        print(f"-> Explodindo a BOM de {material_code} para suprir as {net_requirement} unidades...")
-        for item in bom_items:
-            child_material = db.query(Material).filter(Material.id == item.child_material_id).first()
-            if child_material:
-                comp_gross_demand = net_requirement * item.qty_required
-                
-                # Executa o MRP recursivamente para as matérias-primas e semiacabados
-                child_orders = run_mrp_for_material(db, child_material.material_code, comp_gross_demand, start_date)
-                generated_orders.extend(child_orders)
-                
-    return generated_orders
+
+    for item in bom_items:
+        componente = db.query(Material).filter(Material.id == item.child_material_id).first()
+        if not componente:
+            continue
+
+        nec_bruta = necessidade_liquida * item.qty_required
+        estoque_atual = _estoque_total(db, componente.id)
+        nec_liquida = max(0.0, nec_bruta - estoque_atual + componente.safety_stock)
+
+        resultado.append({
+            "nivel": nivel,
+            "material": componente.material_code,
+            "descricao": componente.description,
+            "necessidade_bruta": round(nec_bruta, 2),
+            "estoque_atual": round(estoque_atual, 2),
+            "necessidade_liquida": round(nec_liquida, 2),
+            "acao_sugerida": "Criar OP" if componente.material_type in ("FERT", "HALB") and nec_liquida > 0
+                              else ("Gerar Solicitacao Compra" if nec_liquida > 0 else "Estoque Suficiente")
+        })
+
+        # Continua explodindo se o componente também tiver sub-componentes (multi-nível)
+        if nec_liquida > 0:
+            _explodir_componentes(db, componente, nec_liquida, nivel + 1, resultado, visitados)
+
+
+def processar_calculo_mrp(codigo_material: str, quantidade: float, db: Session):
+    """
+    Calcula a explosão de necessidades (MRP) para um material FERT/HALB,
+    considerando estoque de segurança e somando todos os lotes existentes.
+    """
+    mat_alvo = db.query(Material).filter(Material.material_code == codigo_material).first()
+    if not mat_alvo:
+        return None
+
+    estoque_atual = _estoque_total(db, mat_alvo.id)
+    nec_bruta = quantidade
+    nec_liquida = max(0.0, nec_bruta - estoque_atual + mat_alvo.safety_stock)
+
+    resultado = [{
+        "nivel": 0,
+        "material": mat_alvo.material_code,
+        "descricao": mat_alvo.description,
+        "necessidade_bruta": round(nec_bruta, 2),
+        "estoque_atual": round(estoque_atual, 2),
+        "necessidade_liquida": round(nec_liquida, 2),
+        "acao_sugerida": "Criar OP" if nec_liquida > 0 else "Estoque Suficiente"
+    }]
+
+    if nec_liquida > 0:
+        _explodir_componentes(db, mat_alvo, nec_liquida, nivel=1, resultado=resultado, visitados={mat_alvo.id})
+
+    return resultado

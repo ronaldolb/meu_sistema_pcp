@@ -1,14 +1,37 @@
-# Ambientes virtuais
+# --- Ambiente virtual Python ---
 .venv/
 venv/
 ENV/
 env/
 
-# Banco de dados local (gerado dinamicamente)
-pcp.db
-pcp.db-journal
-
-# Arquivos do sistema operacional e cache do Python
+# --- Cache e bytecode Python ---
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# --- Banco de dados local (não versionar dados, só estrutura via seed.py) ---
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# --- Variáveis de ambiente / segredos ---
+.env
+.env.local
+
+# --- VS Code ---
+.vscode/
+*.code-workspace
+
+# --- Sistema Operacional ---
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Logs ---
+*.log
+
+# --- Build / distribuição ---
+build/
+dist/
+*.egg-info/

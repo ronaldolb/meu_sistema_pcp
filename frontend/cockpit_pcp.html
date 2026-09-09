@@ -1,304 +1,1014 @@
-<!-- meu_sistema_pcp/frontend/cockpit_pcp.html -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Cockpit PCP - Monitor de Estoque, MRP e Capacidade</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 30px; background-color: #f4f6f9; color: #333; }
-        h1, h2 { color: #004481; }
-        .container { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        th { background-color: #004481; color: white; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
-        button { background-color: #004481; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #002d54; }
-
-        .mrp-form { display: flex; flex-wrap: wrap; align-items: center; gap: 15px; margin-top: 15px; }
-        .form-group { display: flex; align-items: center; gap: 5px; }
-        input { padding: 8px; font-size: 14px; width: 120px; border: 1px solid #ccc; border-radius: 4px; }
-        #mrpMaterial { width: 150px; }
-
-        .alert { color: #d9534f; font-weight: bold; }
-
-        .grid-capacidade { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 15px; }
-        .card-maquina { background: #fafafa; border: 1px solid #e0e0e0; padding: 15px; border-radius: 6px; color: #333; }
-        .barra-progresso-container { background-color: #e0e0e0; border-radius: 10px; width: 100%; height: 20px; margin-top: 8px; overflow: hidden; }
-        .barra-progresso { height: 100%; text-align: center; color: white; font-size: 12px; line-height: 20px; font-weight: bold; transition: width 0.5s ease; }
-        .status-normal { background-color: #5cb85c; }
-        .status-alerta { background-color: #f0ad4e; }
-        .status-sobrecarga { background-color: #d9534f; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cockpit PCP - Planejamento e Controle de Produção</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body class="bg-gray-100 font-sans min-h-screen">
+    <header class="bg-slate-800 text-white shadow-lg sticky top-0 z-20">
+        <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <h1 class="text-lg sm:text-xl font-bold flex items-center gap-2 shrink-0">
+                <svg class="w-6 h-6 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+                Cockpit PCP
+            </h1>
 
-    <h1>Gestão Industrial - Cockpit do PCP</h1>
+            <nav class="flex flex-wrap items-center gap-2 text-sm justify-center">
+                <a href="cockpit_pcp.html" class="bg-blue-600 text-white font-semibold py-2 px-3 sm:px-4 rounded shadow whitespace-nowrap">📊 Cockpit</a>
+                <a href="terminal_mes.html" class="bg-slate-700 hover:bg-slate-600 text-gray-200 font-semibold py-2 px-3 sm:px-4 rounded shadow transition whitespace-nowrap">⚡ Terminal MES</a>
+                <a href="rastreabilidade.html" class="bg-slate-700 hover:bg-slate-600 text-gray-200 font-semibold py-2 px-3 sm:px-4 rounded shadow transition whitespace-nowrap">🧬 Rastreabilidade</a>
+            </nav>
 
-    <!-- Seção de Estoque Real -->
-    <div class="container">
-        <h2>📊 Monitor de Estoque em Tempo Real (SAP MARD)</h2>
-        <button onclick="carregarDadosDoSistema()">🔄 Atualizar Painel Geral</button>
-        <table id="tabelaEstoque">
-            <thead>
-                <tr>
-                    <th>Código do Material</th>
-                    <th>Descrição</th>
-                    <th>Tipo</th>
-                    <th>Estoque Físico Atual</th>
-                    <th>Estoque de Segurança</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-    </div>
+            <button onclick="carregarDados()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold py-2 px-4 rounded shadow shrink-0 w-full md:w-auto">
+                🔄 Atualizar Dados
+            </button>
+        </div>
+    </header>
 
-    <!-- Painel Gráfico de Carga de Máquinas (CRP) -->
-    <div class="container">
-        <h2>📈 Carga e Ocupação das Máquinas (SAP PP-CRP)</h2>
-        <div class="grid-capacidade" id="painelCapacidade"></div>
-    </div>
-
-    <!-- Fila de Ordens de Produção -->
-    <div class="container">
-        <h2>📋 Fila de Ordens de Produção (SAP MD04)</h2>
-        <table id="tabelaOrdens">
-            <thead>
-                <tr>
-                    <th>Código da OP</th>
-                    <th>Material</th>
-                    <th>Qtd. Planejada</th>
-                    <th>Qtd. Confirmada</th>
-                    <th>Status</th>
-                    <th>Ação</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-        <div id="resultadoApontamento" style="margin-top: 12px; font-weight: bold;"></div>
-    </div>
-
-    <!-- Seção de Cálculo do MRP -->
-    <div class="container">
-        <h2>⚙️ Executar Rodada de MRP (Transação MD01)</h2>
-        <div class="mrp-form">
-            <div class="form-group">
-                <label>Material:</label>
-                <input type="text" id="mrpMaterial" value="MAT-FERT-BIKE">
+    <main class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <!-- KPIs -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            <div class="bg-white p-3 sm:p-4 rounded-lg shadow border-l-4 border-blue-500">
+                <p class="text-xs text-gray-500 font-bold uppercase truncate">Total de Materiais</p>
+                <p id="kpi-materiais" class="text-2xl font-extrabold text-gray-800">0</p>
             </div>
-            <div class="form-group">
-                <label>Quantidade:</label>
-                <input type="number" id="mrpQtd" placeholder="Ex: 80" min="1">
+            <div class="bg-white p-3 sm:p-4 rounded-lg shadow border-l-4 border-red-500">
+                <p class="text-xs text-gray-500 font-bold uppercase truncate">Materiais Críticos</p>
+                <p id="kpi-criticos" class="text-2xl font-extrabold text-red-600">0</p>
             </div>
-            <div class="form-group">
-                <label>Dias p/ Entrega:</label>
-                <input type="number" id="mrpDias" value="10">
+            <div class="bg-white p-3 sm:p-4 rounded-lg shadow border-l-4 border-amber-500">
+                <p class="text-xs text-gray-500 font-bold uppercase truncate">Total de OPs</p>
+                <p id="kpi-ops" class="text-2xl font-extrabold text-gray-800">0</p>
             </div>
-            <button onclick="executarMRP()">🚀 Rodar Processamento do MRP</button>
+            <div class="bg-white p-3 sm:p-4 rounded-lg shadow border-l-4 border-green-500">
+                <p class="text-xs text-gray-500 font-bold uppercase truncate">Taxa de Liberação</p>
+                <p id="kpi-taxa" class="text-2xl font-extrabold text-green-600">0%</p>
+            </div>
         </div>
 
-        <div id="resultadoMRP" style="margin-top: 15px; font-weight: bold; color: #5cb85c;"></div>
+        <!-- Mosaico de cards: cada bloco é um azulejo independente que preenche a coluna com mais espaço livre -->
+        <div class="columns-1 md:columns-2 xl:columns-3 gap-4">
+
+            <!-- Nova Ordem de Produção -->
+            <div class="break-inside-avoid mb-4 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-base font-bold text-gray-800 mb-3 border-b pb-2">Nova Ordem de Produção</h2>
+                <form id="form-op" onsubmit="criarOP(event)" class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">Código da OP</label>
+                        <input type="text" id="op_code" required placeholder="Ex: OP-2026-003" class="mt-1 w-full p-2 text-sm border rounded focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">Material</label>
+                        <select id="material_id" required class="mt-1 w-full p-2 text-sm border rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                            <option value="">Carregando materiais...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">Quantidade Planejada</label>
+                        <input type="number" id="qty_planned" required placeholder="Ex: 50" class="mt-1 w-full p-2 text-sm border rounded focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">Status Inicial</label>
+                        <select id="status" class="mt-1 w-full p-2 text-sm border rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                            <option value="CRTD">Criada (CRTD)</option>
+                        </select>
+                        <p class="text-xs text-gray-400 mt-1">Liberação (REL) depende do Check ATP.</p>
+                    </div>
+                    <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded shadow transition text-sm">
+                        Criar Ordem
+                    </button>
+                </form>
+            </div>
+
+            <!-- Nova Requisição de Compra -->
+            <div class="break-inside-avoid mb-4 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-base font-bold text-gray-800 mb-3 border-b pb-2">Nova Requisição de Compra</h2>
+                <form id="form-requisicao" onsubmit="criarRequisicao(event)" class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">Material</label>
+                        <select id="req_material_id" required class="mt-1 w-full p-2 text-sm border rounded focus:ring-2 focus:ring-purple-500 outline-none bg-white">
+                            <option value="">Carregando materiais...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">Quantidade</label>
+                        <input type="number" step="0.01" id="req_quantity" required placeholder="Ex: 50" class="mt-1 w-full p-2 text-sm border rounded focus:ring-2 focus:ring-purple-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">Necessário até (opcional)</label>
+                        <input type="date" id="req_needed_by" class="mt-1 w-full p-2 text-sm border rounded focus:ring-2 focus:ring-purple-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">Observações (opcional)</label>
+                        <input type="text" id="req_notes" placeholder="Ex: reposição de segurança" class="mt-1 w-full p-2 text-sm border rounded focus:ring-2 focus:ring-purple-500 outline-none">
+                    </div>
+                    <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded shadow transition text-sm">
+                        Criar Requisição
+                    </button>
+                </form>
+            </div>
+
+            <!-- Ordens de Produção Cadastradas -->
+            <div class="break-inside-avoid mb-4 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-base font-bold text-gray-800 mb-3 border-b pb-2">Ordens de Produção Cadastradas</h2>
+                <div class="overflow-auto max-h-64">
+                    <table class="w-full text-left border-collapse min-w-[500px] text-sm">
+                        <thead class="sticky top-0 z-10">
+                            <tr class="bg-gray-100 text-gray-600 text-xs uppercase border-b">
+                                <th class="p-2.5">Código OP</th>
+                                <th class="p-2.5">Material</th>
+                                <th class="p-2.5">Planej.</th>
+                                <th class="p-2.5">Conf.</th>
+                                <th class="p-2.5">Status</th>
+                                <th class="p-2.5">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabela-ops"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Capacidade CRP -->
+            <div class="break-inside-avoid mb-4 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-base font-bold text-gray-800 mb-3 border-b pb-2">Capacidade dos Postos de Trabalho (CRP)</h2>
+                <div id="capacidade-lista" class="space-y-3 overflow-y-auto max-h-64"></div>
+            </div>
+
+            <!-- Posição do Estoque e Segurança -->
+            <div class="break-inside-avoid mb-4 bg-white p-4 rounded-lg shadow">
+                <div class="flex justify-between items-center mb-3 border-b pb-2">
+                    <h2 class="text-base font-bold text-gray-800">Posição do Estoque e Segurança</h2>
+                    <button onclick="abrirModalMaterial()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-1.5 px-3 rounded shadow transition whitespace-nowrap">+ Novo Material</button>
+                </div>
+                <div class="overflow-auto max-h-64">
+                    <table class="w-full text-left border-collapse min-w-[550px] text-sm">
+                        <thead class="sticky top-0 z-10">
+                            <tr class="bg-gray-100 text-gray-600 text-xs uppercase border-b">
+                                <th class="p-2.5">Código</th>
+                                <th class="p-2.5">Descrição</th>
+                                <th class="p-2.5">Tipo</th>
+                                <th class="p-2.5">Estoque</th>
+                                <th class="p-2.5">Seg.</th>
+                                <th class="p-2.5">Status</th>
+                                <th class="p-2.5">Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabela-estoque"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Estoque Detalhado por Lote -->
+            <div class="break-inside-avoid mb-4 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-base font-bold text-gray-800 mb-3 border-b pb-2">Estoque Detalhado por Lote</h2>
+                <div class="overflow-auto max-h-64">
+                    <table class="w-full text-left border-collapse min-w-[400px] text-sm">
+                        <thead class="sticky top-0 z-10">
+                            <tr class="bg-gray-100 text-gray-600 text-xs uppercase border-b">
+                                <th class="p-2.5">Material</th>
+                                <th class="p-2.5">Lote</th>
+                                <th class="p-2.5">Qtd.</th>
+                                <th class="p-2.5">Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabela-lotes"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Requisições de Compra -->
+            <div class="break-inside-avoid mb-4 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-base font-bold text-gray-800 mb-3 border-b pb-2">Requisições de Compra</h2>
+                <div class="overflow-auto max-h-64">
+                    <table class="w-full text-left border-collapse min-w-[500px] text-sm">
+                        <thead class="sticky top-0 z-10">
+                            <tr class="bg-gray-100 text-gray-600 text-xs uppercase border-b">
+                                <th class="p-2.5">Material</th>
+                                <th class="p-2.5">Qtd.</th>
+                                <th class="p-2.5">Status</th>
+                                <th class="p-2.5">Fornecedor</th>
+                                <th class="p-2.5">Lote</th>
+                                <th class="p-2.5">Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabela-requisicoes"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Últimas Movimentações -->
+            <div class="break-inside-avoid mb-4 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-base font-bold text-gray-800 mb-3 border-b pb-2">Últimas Movimentações de Estoque</h2>
+                <div class="overflow-auto max-h-64">
+                    <table class="w-full text-left border-collapse min-w-[550px] text-sm">
+                        <thead class="sticky top-0 z-10">
+                            <tr class="bg-gray-100 text-gray-600 text-xs uppercase border-b">
+                                <th class="p-2.5">Data/Hora</th>
+                                <th class="p-2.5">Material</th>
+                                <th class="p-2.5">Lote</th>
+                                <th class="p-2.5">Tipo</th>
+                                <th class="p-2.5">Qtd.</th>
+                                <th class="p-2.5">Motivo</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabela-movimentacoes"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Modal de Movimentação de Estoque -->
+    <div id="modal-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="text-lg font-bold text-gray-800">Movimentar Estoque</h3>
+                <button onclick="fecharModal()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+
+            <div class="px-4 pt-4">
+                <div class="bg-gray-50 border border-gray-200 rounded p-3 text-sm">
+                    <p><span class="text-gray-500">Material:</span> <span id="modal-material-info" class="font-semibold text-gray-800"></span></p>
+                    <p><span class="text-gray-500">Lote:</span> <span id="modal-lote-info" class="font-mono font-semibold text-gray-800"></span></p>
+                    <p><span class="text-gray-500">Saldo atual:</span> <span id="modal-saldo-info" class="font-bold text-gray-800"></span></p>
+                </div>
+            </div>
+
+            <div class="flex gap-2 px-4 pt-4">
+                <button onclick="trocarAba('transferir')" id="aba-transferir" class="flex-1 py-2 text-sm font-semibold rounded border">🔄 Transferir</button>
+                <button onclick="trocarAba('ajustar')" id="aba-ajustar" class="flex-1 py-2 text-sm font-semibold rounded border">⚖️ Ajustar</button>
+                <button onclick="trocarAba('sucata')" id="aba-sucata" class="flex-1 py-2 text-sm font-semibold rounded border">🗑️ Sucata</button>
+            </div>
+
+            <form id="form-transferir" onsubmit="submeterTransferencia(event)" class="p-4 space-y-3 hidden">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Lote de Destino</label>
+                    <input type="text" id="transf-lote-destino" required placeholder="Ex: LOT-INSPECAO-01" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
+                    <p class="text-xs text-gray-400 mt-1">Se o lote não existir, será criado automaticamente.</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Quantidade a Transferir</label>
+                    <input type="number" step="0.01" id="transf-quantidade" required placeholder="Ex: 10" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Motivo (opcional)</label>
+                    <input type="text" id="transf-motivo" placeholder="Ex: separado para inspeção" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow transition">Confirmar Transferência</button>
+            </form>
+
+            <form id="form-ajustar" onsubmit="submeterAjuste(event)" class="p-4 space-y-3 hidden">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Tipo de Ajuste</label>
+                    <select id="ajuste-tipo" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-amber-500 outline-none bg-white">
+                        <option value="entrada">Entrada (aumentar saldo)</option>
+                        <option value="saida">Saída (reduzir saldo)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Quantidade do Ajuste</label>
+                    <input type="number" step="0.01" min="0" id="ajuste-quantidade" required placeholder="Ex: 2" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-amber-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Motivo (obrigatório)</label>
+                    <input type="text" id="ajuste-motivo" required placeholder="Ex: divergência em contagem física" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-amber-500 outline-none">
+                </div>
+                <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2 rounded shadow transition">Confirmar Ajuste</button>
+            </form>
+
+            <form id="form-sucata" onsubmit="submeterSucata(event)" class="p-4 space-y-3 hidden">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Quantidade a Baixar</label>
+                    <input type="number" step="0.01" id="sucata-quantidade" required placeholder="Ex: 3" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-red-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Motivo (obrigatório)</label>
+                    <input type="text" id="sucata-motivo" required placeholder="Ex: peça danificada no transporte" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-red-500 outline-none">
+                </div>
+                <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded shadow transition">Confirmar Baixa por Sucata</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Emitir Pedido -->
+    <div id="modal-emitir-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-sm">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="text-lg font-bold text-gray-800">Emitir Pedido de Compra</h3>
+                <button onclick="fecharModalEmitir()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+            <div class="px-4 pt-4">
+                <div class="bg-gray-50 border border-gray-200 rounded p-3 text-sm">
+                    <p><span class="text-gray-500">Material:</span> <span id="emitir-material-info" class="font-semibold text-gray-800"></span></p>
+                    <p><span class="text-gray-500">Quantidade:</span> <span id="emitir-qtd-info" class="font-bold text-gray-800"></span></p>
+                </div>
+            </div>
+            <form id="form-emitir" onsubmit="submeterEmitirPedido(event)" class="p-4 space-y-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Fornecedor</label>
+                    <input type="text" id="emitir-fornecedor" required placeholder="Ex: Fornecedor Pneus SA" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-purple-500 outline-none">
+                </div>
+                <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded shadow transition">Confirmar Emissão</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Receber Pedido -->
+    <div id="modal-receber-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-sm">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="text-lg font-bold text-gray-800">Receber Pedido</h3>
+                <button onclick="fecharModalReceber()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+            <div class="px-4 pt-4">
+                <div class="bg-gray-50 border border-gray-200 rounded p-3 text-sm">
+                    <p><span class="text-gray-500">Material:</span> <span id="receber-material-info" class="font-semibold text-gray-800"></span></p>
+                    <p><span class="text-gray-500">Fornecedor:</span> <span id="receber-fornecedor-info" class="font-semibold text-gray-800"></span></p>
+                    <p><span class="text-gray-500">Quantidade pedida:</span> <span id="receber-qtd-info" class="font-bold text-gray-800"></span></p>
+                </div>
+            </div>
+            <form id="form-receber" onsubmit="submeterReceberPedido(event)" class="p-4 space-y-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Novo Lote (número)</label>
+                    <input type="text" id="receber-lote" required placeholder="Ex: LOT-PNEU-COMPRA-01" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Quantidade Recebida</label>
+                    <input type="number" step="0.01" id="receber-quantidade" required placeholder="Ex: 50" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500 outline-none">
+                </div>
+                <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded shadow transition">Confirmar Recebimento</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Criar/Editar Material -->
+    <div id="modal-material-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 id="modal-material-titulo" class="text-lg font-bold text-gray-800">Novo Material</h3>
+                <button onclick="fecharModalMaterial()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+            <form id="form-material" onsubmit="submeterMaterial(event)" class="p-4 space-y-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Código do Material</label>
+                    <input type="text" id="mat-codigo" required placeholder="Ex: MAT-ROH-PARAFUSO" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Descrição</label>
+                    <input type="text" id="mat-descricao" required placeholder="Ex: Parafuso Sextavado M6" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Tipo</label>
+                        <select id="mat-tipo" required class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                            <option value="ROH">ROH - Matéria-Prima</option>
+                            <option value="HALB">HALB - Semiacabado</option>
+                            <option value="FERT">FERT - Produto Acabado</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Lead Time (dias)</label>
+                        <input type="number" id="mat-lead-time" min="0" placeholder="Ex: 5" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Estoque de Segurança</label>
+                    <input type="number" step="0.01" id="mat-estoque-seguranca" min="0" placeholder="Ex: 10" class="mt-1 w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <p class="text-xs text-gray-400 mt-1">Abaixo desse valor, o material aparece como CRÍTICO no Cockpit.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="mat-backflush" checked class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                    <label for="mat-backflush" class="text-sm text-gray-700">Permite backflush automático (baixa por apontamento)</label>
+                </div>
+                <button type="submit" id="btn-salvar-material" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded shadow transition">Criar Material</button>
+            </form>
+        </div>
     </div>
 
     <script>
-        const API_URL = "http://localhost:8000/api/v1";
+        const API_URL = 'http://127.0.0.1:8000/api/v1';
+        let materiaisCache = [];
+        let loteAtivo = null;
+        let requisicaoAtiva = null;
+        let materialEditandoId = null;
 
-        function carregarDadosDoSistema() {
-            carregarEstoque();
-            carregarCapacidade();
-            carregarOrdens();
+        document.addEventListener('DOMContentLoaded', carregarDados);
+
+        function carregarDados() {
+            carregarMateriais().then(() => {
+                carregarKPIs();
+                carregarOrdens();
+                carregarEstoque();
+                carregarCapacidade();
+                carregarMovimentacoes();
+                carregarRequisicoes();
+            });
         }
 
-        async function carregarEstoque() {
+        async function carregarMateriais() {
             try {
-                const response = await fetch(`${API_URL}/estoque`);
-                const dados = await response.json();
-                const tbody = document.querySelector("#tabelaEstoque tbody");
-                tbody.innerHTML = "";
+                const res = await fetch(`${API_URL}/materiais`);
+                materiaisCache = await res.json();
 
-                dados.forEach(item => {
-                    const tr = document.createElement("tr");
-                    const isBelowSafety = item.estoque_atual < item.estoque_seguranca;
-
-                    tr.innerHTML = `
-                        <td><strong>${item.codigo}</strong></td>
-                        <td>${item.descricao}</td>
-                        <td>${item.tipo}</td>
-                        <td class="${isBelowSafety ? 'alert' : ''}">${item.estoque_atual.toFixed(1)}</td>
-                        <td>${item.estoque_seguranca.toFixed(1)}</td>
-                    `;
-                    tbody.appendChild(tr);
+                const select = document.getElementById('material_id');
+                select.innerHTML = '<option value="">Selecione um material...</option>';
+                materiaisCache.forEach(mat => {
+                    const opt = document.createElement('option');
+                    opt.value = mat.id;
+                    opt.textContent = `${mat.material_code} - ${mat.description}`;
+                    select.appendChild(opt);
                 });
-            } catch (error) {
-                console.error("Erro ao conectar na API de estoque:", error);
+
+                const selectReq = document.getElementById('req_material_id');
+                selectReq.innerHTML = '<option value="">Selecione um material...</option>';
+                materiaisCache.forEach(mat => {
+                    const opt = document.createElement('option');
+                    opt.value = mat.id;
+                    opt.textContent = `${mat.material_code} - ${mat.description}`;
+                    selectReq.appendChild(opt);
+                });
+            } catch (err) {
+                console.error('Erro ao carregar materiais:', err);
+            }
+        }
+
+        function materialPorId(id) {
+            return materiaisCache.find(m => m.id === id);
+        }
+
+        async function carregarKPIs() {
+            try {
+                const res = await fetch(`${API_URL}/kpis`);
+                const data = await res.json();
+                document.getElementById('kpi-materiais').innerText = data.total_materiais;
+                document.getElementById('kpi-criticos').innerText = data.materiais_criticos;
+                document.getElementById('kpi-ops').innerText = data.total_ops;
+                document.getElementById('kpi-taxa').innerText = data.taxa_liberacao;
+            } catch (err) {
+                console.error('Erro ao carregar KPIs:', err);
             }
         }
 
         async function carregarCapacidade() {
             try {
-                const response = await fetch(`${API_URL}/capacidade`);
-                const dados = await response.json();
-                const container = document.getElementById("painelCapacidade");
-                container.innerHTML = "";
+                const res = await fetch(`${API_URL}/capacidade`);
+                const postos = await res.json();
+                const container = document.getElementById('capacidade-lista');
+                container.innerHTML = '';
 
-                if (!dados || Object.keys(dados).length === 0) {
-                    container.innerHTML = "<p style='color: #666; font-style: italic; padding: 10px;'>Nenhuma ordem de produção ativa gerando carga nas máquinas.</p>";
-                    return;
-                }
+                postos.forEach(p => {
+                    const isEstourado = p.load_percentage > 100;
+                    const corBarra = isEstourado ? 'bg-red-500' : (p.load_percentage > 80 ? 'bg-amber-500' : 'bg-emerald-500');
+                    const largura = Math.min(p.load_percentage, 100);
 
-                for (const [codigoCentro, info] of Object.entries(dados)) {
-                    const card = document.createElement("div");
-                    card.className = "card-maquina";
-
-                    let classeCor = "status-normal";
-                    if (info.percentual_ocupacao >= 100) {
-                        classeCor = "status-sobrecarga";
-                    } else if (info.percentual_ocupacao >= 80) {
-                        classeCor = "status-alerta";
-                    }
-
-                    const larguraBarra = Math.min(info.percentual_ocupacao, 100);
-                    const descricaoTexto = info.description || info.descricao || "Posto Operacional";
-
-                    card.innerHTML = `
-                        <strong>🏭 ${codigoCentro}</strong> - ${descricaoTexto}<br>
-                        <small>Carga Solicitada: ${info.horas_requeridas.toFixed(2)}h / Turno Base: ${info.capacidade_diaria.toFixed(1)}h</small>
-                        <div class="barra-progresso-container">
-                            <div class="barra-progresso ${classeCor}" style="width: ${larguraBarra}%">
-                                ${info.percentual_ocupacao}%
-                            </div>
+                    const div = document.createElement('div');
+                    div.innerHTML = `
+                        <div class="flex flex-col sm:flex-row sm:justify-between text-sm mb-1 gap-1">
+                            <span class="font-semibold text-gray-700">${p.work_center_code} - ${p.description}</span>
+                            <span class="font-bold ${isEstourado ? 'text-red-600' : 'text-gray-700'}">${p.load_percentage}% (${p.required_hours}h / ${p.capacity_hours_per_day}h)</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-3">
+                            <div class="${corBarra} h-3 rounded-full" style="width: ${largura}%"></div>
                         </div>
                     `;
-                    container.appendChild(card);
-                }
-            } catch (error) {
-                console.error("Erro ao conectar na API de capacidade:", error);
+                    container.appendChild(div);
+                });
+            } catch (err) {
+                console.error('Erro ao carregar capacidade:', err);
             }
         }
 
         async function carregarOrdens() {
             try {
-                const response = await fetch(`${API_URL}/ordens`);
-                const dados = await response.json();
-                const tbody = document.querySelector("#tabelaOrdens tbody");
-                tbody.innerHTML = "";
+                const res = await fetch(`${API_URL}/ordens`);
+                const ordens = await res.json();
+                const tbody = document.getElementById('tabela-ops');
+                tbody.innerHTML = '';
 
-                if (!dados || dados.length === 0) {
-                    tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; color:#666;'>Nenhuma ordem cadastrada.</td></tr>";
+                if (ordens.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-400">Nenhuma ordem cadastrada ainda. Crie uma no formulário acima.</td></tr>';
                     return;
                 }
 
-                const corStatus = { "CRTD": "#f0ad4e", "REL": "#5bc0de", "CNF": "#5cb85c" };
-
-                dados.forEach(op => {
-                    const tr = document.createElement("tr");
-                    const cor = corStatus[op.status] || "#333";
-
-                    // Só permite apontar ordens que ainda não foram confirmadas
-                    const acaoHtml = (op.status === "CNF")
-                        ? `<span style="color:#5cb85c;">✔ Concluída</span>`
-                        : `<button style="padding:6px 12px; font-size:13px;" onclick="abrirApontamento('${op.op_code}', ${op.qty_planned})">🏭 Apontar</button>`;
-
+                ordens.forEach(op => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b text-sm hover:bg-gray-50';
                     tr.innerHTML = `
-                        <td><strong>${op.op_code}</strong></td>
-                        <td>${op.material}</td>
-                        <td>${op.qty_planned.toFixed(1)}</td>
-                        <td>${op.qty_confirmed.toFixed(1)}</td>
-                        <td><span style="color:${cor}; font-weight:bold;">${op.status}</span></td>
-                        <td>${acaoHtml}</td>
+                        <td class="p-2.5 font-semibold text-gray-800">${op.op_code}</td>
+                        <td class="p-2.5">${op.material_code || op.material_id}</td>
+                        <td class="p-2.5 font-medium">${op.qty_planned}</td>
+                        <td class="p-2.5 text-gray-600">${op.qty_confirmed}</td>
+                        <td class="p-2.5">
+                            <span class="px-2 py-1 text-xs font-bold rounded ${op.status === 'REL' ? 'bg-green-100 text-green-800' : (op.status === 'CNF' ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-700')}">
+                                ${op.status}
+                            </span>
+                        </td>
+                        <td class="p-2.5 space-x-2 whitespace-nowrap">
+                            ${op.status === 'CRTD' ? `<button onclick="liberarOP('${op.op_code}')" class="text-blue-600 hover:text-blue-800 font-semibold text-xs">Liberar</button>` : ''}
+                            <button onclick="deletarOP(${op.id})" class="text-red-600 hover:text-red-800 font-semibold text-xs">Excluir</button>
+                        </td>
                     `;
                     tbody.appendChild(tr);
                 });
-            } catch (error) {
-                console.error("Erro ao conectar na API de ordens:", error);
+            } catch (err) {
+                console.error('Erro ao carregar Ordens:', err);
             }
         }
 
-        async function abrirApontamento(opCode, qtyPlanejada) {
-            const divResultado = document.getElementById("resultadoApontamento");
-
-            const qtdBoaTexto = prompt(`Ordem ${opCode}\nQuantidade planejada: ${qtyPlanejada}\n\nQuantidade produzida BOA:`, qtyPlanejada);
-            if (qtdBoaTexto === null) return; // Cancelou
-
-            const qtdRefugoTexto = prompt(`Ordem ${opCode}\nQuantidade de REFUGO / perda:`, "0");
-            if (qtdRefugoTexto === null) return; // Cancelou
-
-            const qtdBoa = parseFloat(qtdBoaTexto);
-            const qtdRefugo = parseFloat(qtdRefugoTexto);
-
-            if (isNaN(qtdBoa) || isNaN(qtdRefugo) || qtdBoa < 0 || qtdRefugo < 0) {
-                divResultado.style.color = "#d9534f";
-                divResultado.innerText = "Valores inválidos. Apontamento cancelado.";
-                return;
-            }
-
-            divResultado.style.color = "#004481";
-            divResultado.innerText = `Apontando ${opCode}...`;
-
+        async function carregarEstoque() {
             try {
-                const response = await fetch(`${API_URL}/ordens/apontar`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        codigo_op: opCode,
-                        quantidade_boa: qtdBoa,
-                        quantidade_refugo: qtdRefugo
-                    })
-                });
+                const [resMat, resEstoque] = await Promise.all([
+                    fetch(`${API_URL}/materiais`),
+                    fetch(`${API_URL}/estoque`)
+                ]);
+                const materiais = await resMat.json();
+                const lotes = await resEstoque.json();
 
-                const result = await response.json();
+                const tbodyMat = document.getElementById('tabela-estoque');
+                tbodyMat.innerHTML = '';
 
-                if (response.ok) {
-                    divResultado.style.color = "#5cb85c";
-                    divResultado.innerText = result.mensagem;
-                    carregarDadosDoSistema(); // Atualiza estoque, capacidade e a própria fila
+                if (materiais.length === 0) {
+                    tbodyMat.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-400">Nenhum material cadastrado ainda.</td></tr>';
                 } else {
-                    divResultado.style.color = "#d9534f";
-                    divResultado.innerText = `Erro: ${result.detail || 'Falha no apontamento'}`;
+                materiais.forEach(mat => {
+                    const totalEstoque = lotes
+                        .filter(l => l.material_id === mat.id)
+                        .reduce((soma, l) => soma + l.current_stock, 0);
+                    const isCritico = totalEstoque < mat.safety_stock;
+                    const statusBadge = isCritico
+                        ? '<span class="bg-red-100 text-red-800 text-xs px-2 py-1 rounded font-bold">CRÍTICO</span>'
+                        : '<span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold">OK</span>';
+
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b text-sm hover:bg-gray-50';
+                    tr.innerHTML = `
+                        <td class="p-2.5 font-semibold text-gray-800">${mat.material_code}</td>
+                        <td class="p-2.5">${mat.description}</td>
+                        <td class="p-2.5"><span class="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded font-semibold">${mat.material_type}</span></td>
+                        <td class="p-2.5 font-bold ${isCritico ? 'text-red-600' : 'text-gray-800'}">${totalEstoque}</td>
+                        <td class="p-2.5 text-gray-500">${mat.safety_stock}</td>
+                        <td class="p-2.5">${statusBadge}</td>
+                        <td class="p-2.5">
+                            <button onclick="abrirModalMaterial(${mat.id})" class="text-gray-500 hover:text-gray-800 text-xs font-semibold" title="Editar material">✏️ Editar</button>
+                        </td>
+                    `;
+                    tbodyMat.appendChild(tr);
+                });
                 }
-            } catch (error) {
-                divResultado.style.color = "#d9534f";
-                divResultado.innerText = "Não foi possível conectar ao servidor do PCP.";
-                console.error(error);
+
+                const tbodyLote = document.getElementById('tabela-lotes');
+                tbodyLote.innerHTML = '';
+
+                if (lotes.length === 0) {
+                    tbodyLote.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-400">Nenhum lote em estoque ainda.</td></tr>';
+                } else {
+                lotes.forEach(l => {
+                    const mat = materiaisCache.find(m => m.id === l.material_id);
+                    const codigo = mat ? mat.material_code : l.material_id;
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b text-sm hover:bg-gray-50';
+                    tr.innerHTML = `
+                        <td class="p-2.5">${codigo}</td>
+                        <td class="p-2.5 font-mono text-xs">${l.batch_number}</td>
+                        <td class="p-2.5 font-semibold">${l.current_stock}</td>
+                        <td class="p-2.5">
+                            <button onclick='abrirModal(${l.material_id}, "${codigo}", "${l.batch_number}", ${l.current_stock})' class="text-gray-500 hover:text-gray-800 text-lg leading-none" title="Movimentar">⋮</button>
+                        </td>
+                    `;
+                    tbodyLote.appendChild(tr);
+                });
+                }
+            } catch (err) {
+                console.error('Erro ao carregar estoque:', err);
             }
         }
 
-        async function executarMRP() {
-            const divResultado = document.getElementById("resultadoMRP");
-            divResultado.style.color = "#004481";
-            divResultado.innerText = "Processando MRP...";
-
+        async function carregarMovimentacoes() {
             try {
-                const payload = {
-                    codigo_material: document.getElementById("mrpMaterial").value.trim(),
-                    quantidade: parseFloat(document.getElementById("mrpQtd").value) || 0,
-                    dias_para_entrega: parseInt(document.getElementById("mrpDias").value) || 10
+                const res = await fetch(`${API_URL}/estoque/movimentacoes`);
+                const movimentos = await res.json();
+                const tbody = document.getElementById('tabela-movimentacoes');
+                tbody.innerHTML = '';
+
+                if (movimentos.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-400">Nenhuma movimentação registrada ainda.</td></tr>';
+                    return;
+                }
+
+                const tipoBadge = {
+                    'TRANSFERENCIA': 'bg-blue-100 text-blue-800',
+                    'AJUSTE': 'bg-amber-100 text-amber-800',
+                    'SUCATA': 'bg-red-100 text-red-800',
+                    'RECEBIMENTO_COMPRA': 'bg-purple-100 text-purple-800'
                 };
 
-                const response = await fetch(`${API_URL}/mrp/calcular`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
+                movimentos.forEach(m => {
+                    const dataFormatada = m.created_at ? new Date(m.created_at).toLocaleString('pt-BR') : '-';
+                    const sinal = m.quantity_delta > 0 ? '+' : '';
+                    const corQtd = m.quantity_delta > 0 ? 'text-green-600' : 'text-red-600';
+
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b text-sm hover:bg-gray-50';
+                    tr.innerHTML = `
+                        <td class="p-2.5 text-xs text-gray-500 whitespace-nowrap">${dataFormatada}</td>
+                        <td class="p-2.5">${m.material_code || m.material_id}</td>
+                        <td class="p-2.5 font-mono text-xs">${m.batch_number}${m.related_batch ? ` <span class="text-gray-400">↔ ${m.related_batch}</span>` : ''}</td>
+                        <td class="p-2.5"><span class="text-xs px-2 py-1 rounded font-semibold ${tipoBadge[m.movement_type] || 'bg-gray-100 text-gray-700'}">${m.movement_type}</span></td>
+                        <td class="p-2.5 font-bold ${corQtd}">${sinal}${m.quantity_delta}</td>
+                        <td class="p-2.5 text-gray-600">${m.reason || '-'}</td>
+                    `;
+                    tbody.appendChild(tr);
                 });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    divResultado.style.color = "#5cb85c";
-                    divResultado.innerText = result.mensagem;
-                    setTimeout(() => { carregarDadosDoSistema(); }, 300);
-                } else {
-                    divResultado.style.color = "#d9534f";
-                    divResultado.innerText = `Erro: ${result.detail || 'Falha no processamento'}`;
-                }
-            } catch (error) {
-                divResultado.style.color = "#d9534f";
-                divResultado.innerText = "Não foi possível conectar ao servidor do PCP.";
-                console.error(error);
+            } catch (err) {
+                console.error('Erro ao carregar movimentações:', err);
             }
         }
 
-        carregarDadosDoSistema();
+        async function criarOP(e) {
+            e.preventDefault();
+            const payload = {
+                op_code: document.getElementById('op_code').value,
+                material_id: parseInt(document.getElementById('material_id').value),
+                qty_planned: parseFloat(document.getElementById('qty_planned').value),
+                status: document.getElementById('status').value
+            };
+
+            const res = await fetch(`${API_URL}/ordens`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                document.getElementById('form-op').reset();
+                carregarDados();
+            } else {
+                const err = await res.json();
+                alert(`Erro ao criar Ordem de Produção: ${err.detail || 'verifique os dados'}`);
+            }
+        }
+
+        async function liberarOP(op_code) {
+            const res = await fetch(`${API_URL}/ordens/${op_code}/liberar`, { method: 'POST' });
+            if (res.ok) {
+                carregarDados();
+            } else {
+                const err = await res.json();
+                alert(`Não foi possível liberar: ${err.detail}`);
+            }
+        }
+
+        async function deletarOP(id) {
+            if (confirm('Deseja realmente excluir esta OP?')) {
+                await fetch(`${API_URL}/ordens/${id}`, { method: 'DELETE' });
+                carregarDados();
+            }
+        }
+
+        // ===== MODAL DE MOVIMENTAÇÃO DE ESTOQUE =====
+
+        function abrirModal(materialId, materialCode, batchNumber, currentStock) {
+            loteAtivo = { material_id: materialId, material_code: materialCode, batch_number: batchNumber, current_stock: currentStock };
+
+            document.getElementById('modal-material-info').innerText = materialCode;
+            document.getElementById('modal-lote-info').innerText = batchNumber;
+            document.getElementById('modal-saldo-info').innerText = currentStock;
+
+            document.getElementById('form-transferir').reset();
+            document.getElementById('form-ajustar').reset();
+            document.getElementById('form-sucata').reset();
+
+            trocarAba('transferir');
+            document.getElementById('modal-overlay').classList.remove('hidden');
+        }
+
+        function fecharModal() {
+            document.getElementById('modal-overlay').classList.add('hidden');
+            loteAtivo = null;
+        }
+
+        function trocarAba(aba) {
+            const abas = ['transferir', 'ajustar', 'sucata'];
+            abas.forEach(a => {
+                document.getElementById(`form-${a}`).classList.toggle('hidden', a !== aba);
+                const btn = document.getElementById(`aba-${a}`);
+                if (a === aba) {
+                    btn.className = 'flex-1 py-2 text-sm font-semibold rounded border bg-slate-800 text-white border-slate-800';
+                } else {
+                    btn.className = 'flex-1 py-2 text-sm font-semibold rounded border bg-white text-gray-600 border-gray-300 hover:bg-gray-50';
+                }
+            });
+        }
+
+        async function submeterTransferencia(e) {
+            e.preventDefault();
+            if (!loteAtivo) return;
+
+            const payload = {
+                material_id: loteAtivo.material_id,
+                lote_origem: loteAtivo.batch_number,
+                lote_destino: document.getElementById('transf-lote-destino').value,
+                quantidade: parseFloat(document.getElementById('transf-quantidade').value),
+                motivo: document.getElementById('transf-motivo').value || null
+            };
+
+            const res = await fetch(`${API_URL}/estoque/transferir`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                fecharModal();
+                carregarDados();
+            } else {
+                const err = await res.json();
+                alert(`Erro na transferência: ${err.detail || 'verifique os dados'}`);
+            }
+        }
+
+        async function submeterAjuste(e) {
+            e.preventDefault();
+            if (!loteAtivo) return;
+
+            const tipo = document.getElementById('ajuste-tipo').value;
+            const quantidade = parseFloat(document.getElementById('ajuste-quantidade').value);
+            const quantidadeDelta = tipo === 'saida' ? -Math.abs(quantidade) : Math.abs(quantidade);
+
+            const payload = {
+                material_id: loteAtivo.material_id,
+                batch_number: loteAtivo.batch_number,
+                quantidade_delta: quantidadeDelta,
+                motivo: document.getElementById('ajuste-motivo').value
+            };
+
+            const res = await fetch(`${API_URL}/estoque/ajustar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                fecharModal();
+                carregarDados();
+            } else {
+                const err = await res.json();
+                alert(`Erro no ajuste: ${err.detail || 'verifique os dados'}`);
+            }
+        }
+
+        async function submeterSucata(e) {
+            e.preventDefault();
+            if (!loteAtivo) return;
+
+            const payload = {
+                material_id: loteAtivo.material_id,
+                batch_number: loteAtivo.batch_number,
+                quantidade: parseFloat(document.getElementById('sucata-quantidade').value),
+                motivo: document.getElementById('sucata-motivo').value
+            };
+
+            const res = await fetch(`${API_URL}/estoque/sucata`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                fecharModal();
+                carregarDados();
+            } else {
+                const err = await res.json();
+                alert(`Erro na baixa por sucata: ${err.detail || 'verifique os dados'}`);
+            }
+        }
+
+        // ===== MODAL DE CRIAR/EDITAR MATERIAL =====
+
+        function abrirModalMaterial(materialId) {
+            const form = document.getElementById('form-material');
+            form.reset();
+            document.getElementById('mat-backflush').checked = true;
+
+            if (materialId) {
+                const mat = materialPorId(materialId);
+                if (!mat) return;
+                materialEditandoId = materialId;
+                document.getElementById('modal-material-titulo').innerText = 'Editar Material';
+                document.getElementById('btn-salvar-material').innerText = 'Salvar Alterações';
+                document.getElementById('mat-codigo').value = mat.material_code;
+                document.getElementById('mat-descricao').value = mat.description;
+                document.getElementById('mat-tipo').value = mat.material_type;
+                document.getElementById('mat-lead-time').value = mat.lead_time_days ?? '';
+                document.getElementById('mat-estoque-seguranca').value = mat.safety_stock ?? '';
+                document.getElementById('mat-backflush').checked = mat.backflush !== false;
+            } else {
+                materialEditandoId = null;
+                document.getElementById('modal-material-titulo').innerText = 'Novo Material';
+                document.getElementById('btn-salvar-material').innerText = 'Criar Material';
+            }
+
+            document.getElementById('modal-material-overlay').classList.remove('hidden');
+        }
+
+        function fecharModalMaterial() {
+            document.getElementById('modal-material-overlay').classList.add('hidden');
+            materialEditandoId = null;
+        }
+
+        async function submeterMaterial(e) {
+            e.preventDefault();
+
+            const payload = {
+                material_code: document.getElementById('mat-codigo').value,
+                description: document.getElementById('mat-descricao').value,
+                material_type: document.getElementById('mat-tipo').value,
+                lead_time_days: parseInt(document.getElementById('mat-lead-time').value) || 1,
+                safety_stock: parseFloat(document.getElementById('mat-estoque-seguranca').value) || 0,
+                backflush: document.getElementById('mat-backflush').checked
+            };
+
+            const editando = materialEditandoId !== null;
+            const url = editando ? `${API_URL}/materiais/${materialEditandoId}` : `${API_URL}/materiais`;
+            const method = editando ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                fecharModalMaterial();
+                carregarDados();
+            } else {
+                const err = await res.json();
+                alert(`Erro ao ${editando ? 'atualizar' : 'criar'} material: ${err.detail || 'verifique os dados'}`);
+            }
+        }
+
+        // ===== MÓDULO DE COMPRAS =====
+
+        async function carregarRequisicoes() {
+            try {
+                const res = await fetch(`${API_URL}/compras/requisicoes`);
+                const requisicoes = await res.json();
+                const tbody = document.getElementById('tabela-requisicoes');
+                tbody.innerHTML = '';
+
+                if (requisicoes.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-400">Nenhuma requisição cadastrada ainda.</td></tr>';
+                    return;
+                }
+
+                const statusBadge = {
+                    'ABERTA': 'bg-gray-200 text-gray-700',
+                    'PEDIDO_EMITIDO': 'bg-amber-100 text-amber-800',
+                    'RECEBIDA': 'bg-green-100 text-green-800',
+                    'CANCELADA': 'bg-red-100 text-red-800'
+                };
+
+                requisicoes.forEach(r => {
+                    let acoesHtml = '';
+                    if (r.status === 'ABERTA') {
+                        acoesHtml = `
+                            <button onclick='abrirModalEmitir(${r.id}, "${r.material_code}", ${r.quantity})' class="text-purple-600 hover:text-purple-800 font-semibold text-xs">Emitir Pedido</button>
+                            <button onclick="cancelarRequisicao(${r.id})" class="text-red-600 hover:text-red-800 font-semibold text-xs ml-2">Cancelar</button>
+                        `;
+                    } else if (r.status === 'PEDIDO_EMITIDO') {
+                        acoesHtml = `<button onclick='abrirModalReceber(${r.id}, "${r.material_code}", "${r.supplier || ""}", ${r.quantity})' class="text-emerald-600 hover:text-emerald-800 font-semibold text-xs">Receber</button>`;
+                    } else {
+                        acoesHtml = '<span class="text-gray-300 text-xs">-</span>';
+                    }
+
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b text-sm hover:bg-gray-50';
+                    tr.innerHTML = `
+                        <td class="p-2.5 font-semibold text-gray-800">${r.material_code || r.material_id}</td>
+                        <td class="p-2.5">${r.quantity}</td>
+                        <td class="p-2.5"><span class="text-xs px-2 py-1 rounded font-semibold ${statusBadge[r.status] || 'bg-gray-100 text-gray-700'}">${r.status}</span></td>
+                        <td class="p-2.5">${r.supplier || '-'}</td>
+                        <td class="p-2.5 font-mono text-xs">${r.received_batch || '-'}</td>
+                        <td class="p-2.5 whitespace-nowrap">${acoesHtml}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                console.error('Erro ao carregar requisições:', err);
+            }
+        }
+
+        async function criarRequisicao(e) {
+            e.preventDefault();
+            const payload = {
+                material_id: parseInt(document.getElementById('req_material_id').value),
+                quantity: parseFloat(document.getElementById('req_quantity').value),
+                needed_by_date: document.getElementById('req_needed_by').value || null,
+                notes: document.getElementById('req_notes').value || null
+            };
+
+            const res = await fetch(`${API_URL}/compras/requisicoes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                document.getElementById('form-requisicao').reset();
+                carregarRequisicoes();
+            } else {
+                const err = await res.json();
+                alert(`Erro ao criar requisição: ${err.detail || 'verifique os dados'}`);
+            }
+        }
+
+        async function cancelarRequisicao(id) {
+            if (!confirm('Deseja realmente cancelar esta requisição?')) return;
+            const res = await fetch(`${API_URL}/compras/requisicoes/${id}/cancelar`, { method: 'POST' });
+            if (res.ok) {
+                carregarRequisicoes();
+            } else {
+                const err = await res.json();
+                alert(`Não foi possível cancelar: ${err.detail}`);
+            }
+        }
+
+        function abrirModalEmitir(reqId, materialCode, quantity) {
+            requisicaoAtiva = { id: reqId };
+            document.getElementById('emitir-material-info').innerText = materialCode;
+            document.getElementById('emitir-qtd-info').innerText = quantity;
+            document.getElementById('form-emitir').reset();
+            document.getElementById('modal-emitir-overlay').classList.remove('hidden');
+        }
+
+        function fecharModalEmitir() {
+            document.getElementById('modal-emitir-overlay').classList.add('hidden');
+            requisicaoAtiva = null;
+        }
+
+        async function submeterEmitirPedido(e) {
+            e.preventDefault();
+            if (!requisicaoAtiva) return;
+
+            const payload = { supplier: document.getElementById('emitir-fornecedor').value };
+
+            const res = await fetch(`${API_URL}/compras/requisicoes/${requisicaoAtiva.id}/emitir-pedido`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                fecharModalEmitir();
+                carregarRequisicoes();
+            } else {
+                const err = await res.json();
+                alert(`Erro ao emitir pedido: ${err.detail || 'verifique os dados'}`);
+            }
+        }
+
+        function abrirModalReceber(reqId, materialCode, supplier, quantity) {
+            requisicaoAtiva = { id: reqId };
+            document.getElementById('receber-material-info').innerText = materialCode;
+            document.getElementById('receber-fornecedor-info').innerText = supplier || '-';
+            document.getElementById('receber-qtd-info').innerText = quantity;
+            document.getElementById('form-receber').reset();
+            document.getElementById('receber-quantidade').value = quantity;
+            document.getElementById('modal-receber-overlay').classList.remove('hidden');
+        }
+
+        function fecharModalReceber() {
+            document.getElementById('modal-receber-overlay').classList.add('hidden');
+            requisicaoAtiva = null;
+        }
+
+        async function submeterReceberPedido(e) {
+            e.preventDefault();
+            if (!requisicaoAtiva) return;
+
+            const payload = {
+                batch_number: document.getElementById('receber-lote').value,
+                quantity_received: parseFloat(document.getElementById('receber-quantidade').value)
+            };
+
+            const res = await fetch(`${API_URL}/compras/requisicoes/${requisicaoAtiva.id}/receber`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                fecharModalReceber();
+                carregarDados();
+            } else {
+                const err = await res.json();
+                alert(`Erro ao registrar recebimento: ${err.detail || 'verifique os dados'}`);
+            }
+        }
     </script>
 </body>
 </html>
