@@ -35,3 +35,10 @@ desktop.ini
 build/
 dist/
 *.egg-info/
+
+# --- Ambientes virtuais extras (.venv-1, .venv-2...) ---
+.venv*/
+
+# --- Arquivos pessoais / scripts de manutenção pontual ---
+linkedin_post*.md
+corrigir_op_*.py

@@ -1,12 +1,10 @@
 # meu_sistema_pcp/api/v1/endpoints.py
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from typing import List
-
-from database.connection import get_db
-from database.models import Material, ProductionOrder, Inventory, BatchGenealogy, BOM, StockMovement, PurchaseRequisition
 from api.v1.schemas import (
     MaterialCreate, MaterialUpdate, MaterialResponse, InventoryResponse,
+)
+from database.models import Material, ProductionOrder, Inventory, BatchGenealogy, BOM, StockMovement, PurchaseRequisition
+from api.v1.schemas import (
+    MaterialCreate, MaterialResponse, InventoryResponse,
     ProductionOrderCreate, ProductionOrderUpdate, ProductionOrderResponse,
     ApontamentoComLotes, WorkCenterLoadResponse,
     RastreabilidadeResponse, GenealogyComponentResponse,
@@ -14,11 +12,26 @@ from api.v1.schemas import (
     RequisicaoCreate, EmitirPedidoRequest, ReceberPedidoRequest, RequisicaoResponse,
     KPISummaryResponse
 )
+from core.inventory_ops import transferir_lote, ajustar_estoque, dar_baixa_sucata
+from core.purchasing import criar_requisicao, emitir_pedido, receber_pedido, cancelar_requisicao
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List
+
+from database.connection import get_db
+from database.models import Material, ProductionOrder, Inventory, BatchGenealogy, BOM, StockMovement
+from api.v1.schemas import (
+    MaterialCreate, MaterialResponse, InventoryResponse,
+    ProductionOrderCreate, ProductionOrderUpdate, ProductionOrderResponse,
+    ApontamentoComLotes, WorkCenterLoadResponse,
+    RastreabilidadeResponse, GenealogyComponentResponse,
+    TransferenciaLoteRequest, AjusteEstoqueRequest, SucataRequest, StockMovementResponse,
+    KPISummaryResponse
+)
 from core.mrp_engine import processar_calculo_mrp
 from core.crp_engine import calcular_carga_postos
 from core.shop_floor import release_production_order, confirm_production_order_with_batches
 from core.inventory_ops import transferir_lote, ajustar_estoque, dar_baixa_sucata
-from core.purchasing import criar_requisicao, emitir_pedido, receber_pedido, cancelar_requisicao
 
 router = APIRouter()
 
@@ -59,21 +72,6 @@ def criar_material(material: MaterialCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(novo_mat)
     return novo_mat
-
-
-@router.put("/materiais/{material_id}", response_model=MaterialResponse, tags=["Estoque"])
-def atualizar_material(material_id: int, material_update: MaterialUpdate, db: Session = Depends(get_db)):
-    material = db.query(Material).filter(Material.id == material_id).first()
-    if not material:
-        raise HTTPException(status_code=404, detail="Material não encontrado.")
-
-    update_data = material_update.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(material, key, value)
-
-    db.commit()
-    db.refresh(material)
-    return material
 
 
 # --- Rota de Estoque por Lote ---
@@ -273,7 +271,6 @@ def listar_movimentacoes(material_id: int = None, db: Session = Depends(get_db))
             "created_at": m.created_at
         })
     return resultado
-
 
 # --- Rotas de Compras (Requisição → Pedido → Recebimento) ---
 def _enriquecer_requisicao(req: PurchaseRequisition, db: Session) -> dict:

@@ -31,7 +31,7 @@
 
                 <form id="form-apontamento" onsubmit="registrarApontamento(event)" class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-1">Ordem de Produção (liberadas - REL)</label>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Ordem de Produção (em aberto para apontamento)</label>
                         <select id="select-op" required onchange="carregarComponentesDaOP()" class="w-full bg-slate-900 border border-gray-600 rounded p-3 text-white focus:outline-none focus:ring-2 focus:ring-amber-400">
                             <option value="">Carregando OPs liberadas...</option>
                         </select>
@@ -84,6 +84,11 @@
         let materiaisCache = [];
         let estoqueCache = [];
 
+        // Status que NÃO podem receber apontamento:
+        // CRTD = criada (ainda não liberada), CNF = totalmente confirmada,
+        // TECO = encerrada tecnicamente, CANC = cancelada.
+        const STATUS_BLOQUEADOS = ['CRTD', 'CNF', 'TECO', 'CANC'];
+
         document.addEventListener('DOMContentLoaded', () => {
             iniciarRelogio();
             carregarBase();
@@ -109,6 +114,12 @@
             return materiaisCache.find(m => m.id === id);
         }
 
+        // OP pode ser apontada se já foi liberada, não está encerrada
+        // e ainda tem saldo a produzir (cobre REL e parcialmente confirmada - PCNF).
+        function opDisponivelParaApontamento(op) {
+            return !STATUS_BLOQUEADOS.includes(op.status) && op.qty_confirmed < op.qty_planned;
+        }
+
         async function carregarOpsMes() {
             try {
                 const response = await fetch(`${API_BASE_URL}/ordens`);
@@ -120,12 +131,13 @@
                 select.innerHTML = '<option value="">Selecione uma OP...</option>';
                 tbody.innerHTML = '';
 
-                const opsLiberadas = ordensCache.filter(op => op.status === 'REL');
+                const opsAbertas = ordensCache.filter(opDisponivelParaApontamento);
 
-                opsLiberadas.forEach(op => {
+                opsAbertas.forEach(op => {
+                    const saldo = op.qty_planned - op.qty_confirmed;
                     const option = document.createElement('option');
                     option.value = op.id;
-                    option.textContent = `${op.op_code} - ${op.material_code} (Plan: ${op.qty_planned})`;
+                    option.textContent = `${op.op_code} - ${op.material_code} (Plan: ${op.qty_planned} | Falta: ${saldo}) [${op.status}]`;
                     select.appendChild(option);
                 });
 

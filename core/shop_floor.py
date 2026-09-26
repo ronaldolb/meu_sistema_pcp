@@ -2,6 +2,11 @@
 from database.models import Material, BOM, Inventory, ProductionOrder, BatchGenealogy
 from sqlalchemy.orm import Session
 
+# Status em que a OP aceita apontamento:
+# REL  = Liberada (nenhum apontamento ainda)
+# PCNF = Parcialmente confirmada (já teve apontamento, mas ainda falta produzir)
+STATUS_APONTAVEIS = ("REL", "PCNF")
+
 
 def release_production_order(db: Session, op_code: str):
     """
@@ -47,15 +52,20 @@ def confirm_production_order_with_batches(db: Session, op_code: str, qty_produce
     """
     Apontamento com Rastreabilidade de Lote (Equivalente à CO11N + CHVW do SAP).
     Dá entrada no lote do acabado (Mov 101) e consome lotes específicos de insumos (Mov 261).
+    Aceita apontamentos parciais: a OP fica PCNF até atingir a quantidade planejada, e então vira CNF.
 
     :param components_batches: Dicionário contendo {'CODIGO-COMPONENTE': 'NUMERO-LOTE'}
     """
     print(f"\n>>> [CHÃO DE FÁBRICA] Apontando Produção com Lotes para a Ordem: {op_code}")
 
-    # 1. Validar a ordem
+    # 1. Validar a ordem (aceita REL e PCNF)
     order = db.query(ProductionOrder).filter(ProductionOrder.op_code == op_code).first()
-    if not order or order.status != "REL":
-        print("Erro: A ordem precisa estar com status REL (Liberada) para ser apontada.")
+    if not order:
+        print("Erro: Ordem de Produção não encontrada no banco.")
+        return False
+
+    if order.status not in STATUS_APONTAVEIS:
+        print(f"Erro: A ordem está com status {order.status}. Só é possível apontar ordens com status REL ou PCNF.")
         return False
 
     parent_material = db.query(Material).filter(Material.id == order.material_id).first()
@@ -63,7 +73,7 @@ def confirm_production_order_with_batches(db: Session, op_code: str, qty_produce
 
     # Garantir que um lote de produto foi definido (gerado no MRP) e PERSISTIR na ordem
     lote_pai = order.product_batch or f"LOT-FERT-{order.op_code}"
-    order.product_batch = lote_pai  # <-- CORREÇÃO: grava o lote gerado de volta na OP
+    order.product_batch = lote_pai
 
     # 2. ENTRADA DO ACABADO/SEMIACABADO POR LOTE (Movimento 101 SAP)
     inventory_entry = db.query(Inventory).filter(
@@ -116,9 +126,17 @@ def confirm_production_order_with_batches(db: Session, op_code: str, qty_produce
         )
         db.add(genealogy_entry)
 
-    # 5. Finalizar e salvar a transação com segurança
-    order.status = "CNF"
+    # 5. Atualizar quantidade confirmada e definir o status conforme o progresso
     order.qty_confirmed = (order.qty_confirmed or 0.0) + qty_produced_good
+
+    if order.qty_confirmed >= order.qty_planned:
+        order.status = "CNF"   # Totalmente confirmada
+    else:
+        order.status = "PCNF"  # Parcialmente confirmada - continua aceitando apontamento
+
     db.commit()
-    print(f"-> [STATUS ALTERADO] Ordem {op_code} atualizada para CNF. Rastreabilidade gravada com sucesso!")
+
+    saldo = max(order.qty_planned - order.qty_confirmed, 0)
+    print(f"-> [STATUS ALTERADO] Ordem {op_code} atualizada para {order.status} "
+          f"({order.qty_confirmed}/{order.qty_planned}, falta {saldo}). Rastreabilidade gravada com sucesso!")
     return True

@@ -35,6 +35,7 @@ O resultado é um sistema PCP/MES funcional, com backend em **FastAPI** e fronte
 - Criação de OP vinculada a material (chave estrangeira, não texto solto)
 - **Check ATP** na liberação: soma o saldo de todos os lotes do componente antes de liberar a ordem
 - Apontamento de produção com **backflush automático** por lote específico escolhido pelo operador
+- **Apontamento parcial**: a ordem fica como `PCNF` (parcialmente confirmada) até atingir a quantidade planejada e só então passa para `CNF`
 
 ### 🧬 Rastreabilidade por Lote (Batch Genealogy)
 - Geração automática de lote do produto acabado a cada apontamento
@@ -61,7 +62,20 @@ O resultado é um sistema PCP/MES funcional, com backend em **FastAPI** e fronte
 | **Terminal MES** | Apontamento de produção pelo operador, com seleção de lote por componente |
 | **Rastreabilidade** | Consulta da árvore de genealogia de lote de qualquer ordem confirmada |
 
-*(Adicione aqui prints de tela do Cockpit, Terminal MES e Rastreabilidade)*
+### Cockpit PCP
+Indicadores, ordens de produção em diferentes status (CNF, REL), carga dos postos de trabalho (CRP), estoque por lote e requisições de compra.
+
+![Cockpit PCP](docs/img/cockpit.png)
+
+### Terminal MES
+Apontamento parcial de uma ordem (6 de 10 já produzidas), com seleção do lote de cada componente e saldo atualizado pelo backflush.
+
+![Terminal MES](docs/img/terminal-mes.png)
+
+### Rastreabilidade por lote
+Genealogia do lote `LOT-FERT-OP-2026-004`: quais lotes de rodas e quadros foram consumidos em cada apontamento (12 + 8 rodas e 6 + 4 quadros para 10 bicicletas).
+
+![Rastreabilidade](docs/img/rastreabilidade.png)
 
 ---
 
@@ -121,7 +135,7 @@ python -m venv .venv
 # source .venv/bin/activate     # Linux/Mac
 
 # 3. Instale as dependências
-pip install fastapi uvicorn sqlalchemy pydantic
+pip install -r requirements.txt
 
 # 4. Popule o banco de dados com dados de demonstração
 python seed.py
@@ -137,6 +151,8 @@ Abra os arquivos em `frontend/` com a extensão **Live Server** do VS Code (ou q
 ---
 
 ## 🗺️ Roadmap
+
+- [x] Apontamento parcial de ordens (status `PCNF`)
 
 - [ ] Relatório de desvios (Planejado × Realizado)
 - [ ] MRP gerando sub-ordens automáticas para itens semiacabados (HALB)
