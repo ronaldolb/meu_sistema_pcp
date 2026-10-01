@@ -9,18 +9,22 @@ def _estoque_total(db: Session, material_id: int) -> float:
     return sum(l.current_stock for l in lotes)
 
 
-def _explodir_componentes(db: Session, material: Material, necessidade_liquida: float, nivel: int, resultado: list, visitados: set):
-    """Explode recursivamente os componentes de um material via BOM, com trava antiloop."""
-    if material.id in visitados:
-        return  # Trava antiloop (evita BOM circular)
-    visitados.add(material.id)
+def _explodir_componentes(db: Session, material: Material, necessidade_liquida: float, nivel: int, resultado: list, caminho: frozenset):
+    """
+    Explode recursivamente os componentes de um material via BOM.
 
+    Trava antiloop: `caminho` guarda só os materiais do ramo atual (pai, avô...).
+    Se um componente já está no caminho, a BOM é circular e o ramo é interrompido.
+    Um mesmo semiacabado usado em ramos diferentes continua sendo explodido em cada um.
+    """
     bom_items = db.query(BOM).filter(BOM.parent_material_id == material.id).all()
 
     for item in bom_items:
         componente = db.query(Material).filter(Material.id == item.child_material_id).first()
         if not componente:
             continue
+        if componente.id in caminho:
+            continue  # BOM circular (ex.: A -> B -> A): interrompe este ramo
 
         nec_bruta = necessidade_liquida * item.qty_required
         estoque_atual = _estoque_total(db, componente.id)
@@ -39,7 +43,7 @@ def _explodir_componentes(db: Session, material: Material, necessidade_liquida: 
 
         # Continua explodindo se o componente também tiver sub-componentes (multi-nível)
         if nec_liquida > 0:
-            _explodir_componentes(db, componente, nec_liquida, nivel + 1, resultado, visitados)
+            _explodir_componentes(db, componente, nec_liquida, nivel + 1, resultado, caminho | {componente.id})
 
 
 def processar_calculo_mrp(codigo_material: str, quantidade: float, db: Session):
@@ -66,6 +70,6 @@ def processar_calculo_mrp(codigo_material: str, quantidade: float, db: Session):
     }]
 
     if nec_liquida > 0:
-        _explodir_componentes(db, mat_alvo, nec_liquida, nivel=1, resultado=resultado, visitados={mat_alvo.id})
+        _explodir_componentes(db, mat_alvo, nec_liquida, nivel=1, resultado=resultado, caminho=frozenset({mat_alvo.id}))
 
     return resultado
