@@ -1,5 +1,7 @@
 # 🏭 Sistema PCP Standalone
 
+![Testes](https://github.com/ronaldolb/meu_sistema_pcp/actions/workflows/tests.yml/badge.svg)
+
 Sistema de **Planejamento e Controle de Produção (PCP)**, desenvolvido do zero em Python, inspirado nos módulos **SAP PP/MM** (MRP, CRP, Rastreabilidade de Lote e Compras). Projeto pessoal construído para aplicar na prática conceitos de MRP, controle de capacidade e gestão de estoque por lote — os mesmos fundamentos usados em ERPs de grande porte, só que num sistema enxuto e sob total controle do autor.
 
 > Desenvolvido por [Ronaldo Lopes de Barros](https://github.com/ronaldolb) — profissional de PCP na indústria, em transição de carreira para desenvolvimento de software, autodidata em Python desde 2023.
@@ -87,6 +89,7 @@ Genealogia do lote `LOT-FERT-OP-2026-004`: quais lotes de rodas e quadros foram 
 | ORM / Banco de Dados | SQLAlchemy, SQLite |
 | Validação de Dados | Pydantic |
 | Frontend | HTML5, JavaScript (vanilla), Tailwind CSS |
+| Testes / CI | pytest, GitHub Actions |
 
 ---
 
@@ -94,6 +97,8 @@ Genealogia do lote `LOT-FERT-OP-2026-004`: quais lotes de rodas e quadros foram 
 
 ```
 meu_sistema_pcp/
+├── .github/workflows/
+│   └── tests.yml            # CI: roda os testes a cada push e pull request
 ├── core/                    # Regras de negócio (motores)
 │   ├── mrp_engine.py        # Explosão de BOM / MRP
 │   ├── crp_engine.py        # Cálculo de capacidade
@@ -110,8 +115,15 @@ meu_sistema_pcp/
 │   ├── cockpit_pcp.html     # Painel principal
 │   ├── terminal_mes.html    # Apontamento de chão de fábrica
 │   └── rastreabilidade.html # Consulta de genealogia de lote
+├── tests/
+│   ├── conftest.py          # Fixtures: banco SQLite em memória e fábricas de dados
+│   ├── test_mrp_engine.py   # Testes do motor de MRP
+│   ├── test_crp_engine.py   # Testes do cálculo de capacidade
+│   └── test_api.py          # Testes das rotas da API
 ├── main.py                  # Inicialização do FastAPI
-└── seed.py                  # Carga inicial de dados de demonstração
+├── seed.py                  # Carga inicial de dados de demonstração
+├── pytest.ini               # Configuração do pytest
+└── requirements-dev.txt     # Dependências para desenvolvimento e testes
 ```
 
 ---
@@ -150,13 +162,39 @@ Abra os arquivos em `frontend/` com a extensão **Live Server** do VS Code (ou q
 
 ---
 
+## 🧪 Testes
+
+São 19 testes automatizados com **pytest**, cobrindo o motor de MRP, o cálculo de capacidade (CRP) e as rotas da API. Cada teste roda num banco SQLite **em memória**, isolado: nada toca o `pcp.db` real e um teste nunca enxerga os dados de outro.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+O que é verificado:
+- **MRP:** explosão multinível, soma de estoque de vários lotes, estoque de segurança, semiacabado usado em mais de um ramo e proteção contra BOM circular
+- **CRP:** carga por posto, ordens confirmadas ignoradas, apontamento parcial, soma de várias ordens e posto com capacidade zero
+- **API:** respostas 200, 201, 404 e 422 das rotas de MRP, materiais e capacidade
+
+Os testes rodam automaticamente no **GitHub Actions** a cada push e pull request.
+
+### 🐞 Bug encontrado pelos testes
+
+Ao escrever os testes, a explosão multinível falhou: o MRP calculava só o produto acabado e **nunca explodia a lista técnica**.
+
+- **Causa-raiz:** a trava antiloop recebia o material raiz já marcado como visitado, então a função recursiva retornava logo na primeira chamada. Além disso, o conjunto global de visitados impediria explodir um semiacabado usado em mais de um ramo da estrutura.
+- **Correção:** a trava passou a considerar apenas o caminho do ramo atual. A BOM circular continua bloqueada, e componentes compartilhados são calculados em cada ramo.
+- **Garantia:** os testes `test_explosao_multinivel_sem_estoque`, `test_semiacabado_usado_em_dois_lugares_explode_nos_dois` e `test_bom_circular_nao_trava_o_calculo` impedem que o problema volte.
+
+---
+
 ## 🗺️ Roadmap
 
 - [x] Apontamento parcial de ordens (status `PCNF`)
-
+- [x] Testes automatizados (pytest) com integração contínua (GitHub Actions)
 - [ ] Relatório de desvios (Planejado × Realizado)
 - [ ] MRP gerando sub-ordens automáticas para itens semiacabados (HALB)
-- [ ] Testes automatizados (pytest)
+- [ ] MRP descontando o estoque uma única vez quando o mesmo componente aparece em vários ramos
 - [ ] Deploy em nuvem com PostgreSQL
 
 ---
